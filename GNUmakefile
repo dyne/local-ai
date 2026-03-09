@@ -1,10 +1,11 @@
 SHELL := /bin/sh
-PY311 := $(shell command -v python3.11 2>/dev/null)
 ifeq ($(OS),Windows_NT)
 HOST_PYTHON ?= py -3.11
 VENV_PYTHON := .venv/Scripts/python.exe
 DATA_SEP := ;
-else ifneq ($(PY311),)
+else
+PY311 := $(shell command -v python3.11 2>/dev/null)
+ifneq ($(PY311),)
 HOST_PYTHON ?= python3.11
 VENV_PYTHON := .venv/bin/python
 DATA_SEP := :
@@ -12,6 +13,7 @@ else
 HOST_PYTHON ?= python3
 VENV_PYTHON := .venv/bin/python
 DATA_SEP := :
+endif
 endif
 PYTHON ?= $(VENV_PYTHON)
 PIP := $(PYTHON) -m pip
@@ -23,6 +25,12 @@ REQUIREMENTS := numpy noisereduce webrtcvad-wheels sounddevice fastapi uvicorn w
 OPENVINO_PACKAGES := openvino openvino-genai openvino-tokenizers
 NPM ?= npm
 FRONTEND_DIR := frontend
+RUN_PREFIX :=
+ifeq ($(OS),Windows_NT)
+RUN_PREFIX :=
+else
+RUN_PREFIX := exec
+endif
 
 .PHONY: all install install-build frontend-install frontend-test frontend-build spec build build-webrtc run run-web run-server test clean
 
@@ -79,13 +87,13 @@ build: install spec
 build-webrtc: build
 
 run:
-	exec $(PYTHON) $(SCRIPT)
+	$(RUN_PREFIX) $(PYTHON) $(SCRIPT)
 
 run-web:
-	exec $(PYTHON) $(SCRIPT) --web
+	$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --web
 
 run-server:
-	exec $(PYTHON) $(SCRIPT) --server
+	$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --server
 
 test: frontend-test
 	$(PYTHON) -m pytest
