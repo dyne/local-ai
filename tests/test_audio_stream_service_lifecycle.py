@@ -102,6 +102,47 @@ async def test_create_session_translates_validation_errors() -> None:
 
 
 @pytest.mark.anyio
+async def test_create_session_validates_raw_payload_dict() -> None:
+    service = AudioStreamService(make_context(), "<html></html>")
+
+    response = await service._create_session(
+        {
+            "session_id": "abc",
+            "save_sample": False,
+            "silence_detect": True,
+            "debug": False,
+            "vad_mode": 3,
+            "chunk_seconds": 1.0,
+            "overlap_seconds": 0.0,
+            "mime_type": "audio/webm",
+            "audio_bitrate": 48000,
+        }
+    )
+
+    assert response.body == b'{"ok":true}'
+    assert service.sessions["abc"].mime_type == "audio/webm"
+
+
+@pytest.mark.anyio
+async def test_create_session_returns_400_for_invalid_raw_payload_dict() -> None:
+    service = AudioStreamService(make_context(), "<html></html>")
+
+    with pytest.raises(HTTPException) as exc:
+        await service._create_session(
+            {
+                "session_id": "abc",
+                "chunk_seconds": 0.0,
+            }
+    )
+
+    assert exc.value.status_code == 400
+    assert str(exc.value.detail) in {
+        "chunk_seconds must be > 0",
+        "Invalid session payload: Input should be a valid number",
+    }
+
+
+@pytest.mark.anyio
 async def test_cleanup_session_closes_socket_emits_saved_capture_and_removes_session(monkeypatch: pytest.MonkeyPatch) -> None:
     service = AudioStreamService(make_context(), "<html></html>")
     session = make_session("abc")

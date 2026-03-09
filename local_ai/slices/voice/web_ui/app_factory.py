@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import pathlib
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -27,7 +27,11 @@ def build_browser_app(
         return index_html
 
     @app.post("/session")
-    async def create_session(payload: object) -> object:
+    async def create_session(request: Request) -> object:
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
         return await create_session_handler(payload)
 
     @app.websocket("/audio/{session_id}")

@@ -44,3 +44,46 @@ def test_build_browser_app_serves_static_assets_when_directory_exists(tmp_path: 
 
     assert response.status_code == 200
     assert "console.log('ready');" in response.text
+
+
+def test_build_browser_app_passes_json_payload_to_session_handler() -> None:
+    received: list[object] = []
+
+    async def create_session_handler(payload: object) -> object:
+        received.append(payload)
+        return {"ok": True}
+
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=create_session_handler,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+    )
+
+    client = TestClient(app)
+    response = client.post("/session", json={"session_id": "abc", "chunk_seconds": 1.5})
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert received == [{"session_id": "abc", "chunk_seconds": 1.5}]
+
+
+def test_build_browser_app_returns_400_for_invalid_json_body() -> None:
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=lambda payload: None,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/session",
+        content="{",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid JSON body."}

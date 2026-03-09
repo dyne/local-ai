@@ -9,7 +9,7 @@ import av
 import numpy as np
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from local_ai.slices.voice.shared.audio_processing import TARGET_SAMPLE_RATE, create_audio_preprocessor
 from local_ai.slices.voice.shared.transcript_policy import should_suppress_transcript, transcribe_chunk
@@ -109,30 +109,36 @@ class AudioStreamService:
         )
 
     async def _create_session(self, payload: SessionConfig) -> JSONResponse:
-        existing = self.sessions.get(payload.session_id)
+        try:
+            config = payload if isinstance(payload, SessionConfig) else SessionConfig.model_validate(payload)
+        except ValidationError as exc:
+            message = exc.errors()[0].get("msg", "Invalid session payload.")
+            raise HTTPException(status_code=400, detail=f"Invalid session payload: {message}") from exc
+
+        existing = self.sessions.get(config.session_id)
         if existing is not None:
             await self._cleanup_session(existing)
 
         try:
-            self.sessions[payload.session_id] = create_session_state(
-                session_id=payload.session_id,
-                save_sample=payload.save_sample,
-                silence_detect=payload.silence_detect,
-                debug=payload.debug,
-                chunk_seconds=payload.chunk_seconds,
-                overlap_seconds=payload.overlap_seconds,
-                mime_type=payload.mime_type,
-                audio_bitrate=payload.audio_bitrate,
+            self.sessions[config.session_id] = create_session_state(
+                session_id=config.session_id,
+                save_sample=config.save_sample,
+                silence_detect=config.silence_detect,
+                debug=config.debug,
+                chunk_seconds=config.chunk_seconds,
+                overlap_seconds=config.overlap_seconds,
+                mime_type=config.mime_type,
+                audio_bitrate=config.audio_bitrate,
                 create_preprocessor=lambda enabled, vad_mode: create_audio_preprocessor(enabled, vad_mode=vad_mode),
-                vad_mode=payload.vad_mode,
+                vad_mode=config.vad_mode,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         await self._debug(
-            self.sessions[payload.session_id],
-            f"session created mime={payload.mime_type or 'unknown'} bitrate={payload.audio_bitrate} chunk={payload.chunk_seconds:.2f}s overlap={payload.overlap_seconds:.2f}s save_sample={payload.save_sample}",
+            self.sessions[config.session_id],
+            f"session created mime={config.mime_type or 'unknown'} bitrate={config.audio_bitrate} chunk={config.chunk_seconds:.2f}s overlap={config.overlap_seconds:.2f}s save_sample={config.save_sample}",
         )
         return JSONResponse({"ok": True})
 
