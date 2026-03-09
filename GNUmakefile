@@ -79,13 +79,13 @@ build: install spec
 build-webrtc: build
 
 run:
-	$(PYTHON) $(SCRIPT)
+	exec $(PYTHON) $(SCRIPT)
 
 run-web:
-	$(PYTHON) $(SCRIPT) --web
+	exec $(PYTHON) $(SCRIPT) --web
 
 run-server:
-	$(PYTHON) $(SCRIPT) --server
+	exec $(PYTHON) $(SCRIPT) --server
 
 test: frontend-test
 	$(PYTHON) -m pytest
