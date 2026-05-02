@@ -87,3 +87,18 @@ def test_preprocess_audio_without_preprocessor_normalizes_input() -> None:
     )
     assert audio.dtype == np.float32
     assert audio.shape == (4,)
+
+
+def test_sanitize_audio_replaces_non_finite_values_and_logs() -> None:
+    messages: list[str] = []
+
+    audio = audio_processing.sanitize_audio(
+        np.array([0.0, np.nan, np.inf, -np.inf], dtype=np.float32),
+        context="noise reduction",
+        verbose=True,
+        start=0.0,
+        logger=lambda message, verbose, start: messages.append(message),
+    )
+
+    assert audio.tolist() == [0.0, 0.0, 1.0, -1.0]
+    assert messages == ["Audio sanitation: replaced 3 non-finite samples after noise reduction"]

@@ -62,7 +62,7 @@ def execute_transcribe_args(
 
     status = (
         run_file_mode_fn(args, runtime.pipe, audio_preprocessor, runtime.generate_kwargs, start)
-        if getattr(args, "wav_path")
+        if getattr(args, "input_path")
         else run_live_mode_fn(args, runtime.pipe, audio_preprocessor, runtime.generate_kwargs, start)
     )
     if status == 0:

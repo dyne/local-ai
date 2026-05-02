@@ -6,5 +6,5 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class TranscribeFileRequest:
-    wav_path: pathlib.Path
+    input_path: pathlib.Path
     verbose: bool = False

@@ -69,6 +69,22 @@ def normalize_audio_format(audio: np.ndarray) -> np.ndarray:
     return np.asarray(audio, dtype=np.float32).reshape(-1)
 
 
+def sanitize_audio(
+    audio: np.ndarray,
+    *,
+    context: str,
+    verbose: bool,
+    start: float,
+    logger: Callable[[str, bool, float | None], None],
+) -> np.ndarray:
+    normalized = normalize_audio_format(audio)
+    if np.isfinite(normalized).all():
+        return normalized
+    invalid_count = int(np.size(normalized) - np.count_nonzero(np.isfinite(normalized)))
+    logger(f"Audio sanitation: replaced {invalid_count} non-finite samples after {context}", verbose, start)
+    return np.nan_to_num(normalized, nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32, copy=False)
+
+
 def resample_audio_linear(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
     if source_rate == target_rate:
         return audio
@@ -147,6 +163,7 @@ def prepare_vad_audio(audio: np.ndarray, sample_rate: int) -> tuple[np.ndarray, 
 
 def speech_frame_stats(audio: np.ndarray, vad: object, sample_rate: int) -> tuple[int, int, int]:
     vad_audio, vad_sample_rate = prepare_vad_audio(audio, sample_rate)
+    vad_audio = np.nan_to_num(vad_audio, nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32, copy=False)
     frame_samples = vad_sample_rate * VAD_FRAME_MS // 1000
     pcm16 = (np.clip(vad_audio, -1.0, 1.0) * 32767.0).astype(np.int16)
     if pcm16.size == 0:
@@ -223,16 +240,22 @@ def preprocess_audio(
     logger: Callable[[str, bool, float | None], None],
 ) -> np.ndarray:
     if preprocessor is None:
-        return normalize_audio_format(audio)
-    original_audio = normalize_audio_format(audio)
+        return sanitize_audio(audio, context="decode", verbose=verbose, start=start, logger=logger)
+    original_audio = sanitize_audio(audio, context="decode", verbose=verbose, start=start, logger=logger)
+    logger(
+        f"Running noise reduction on {original_audio.shape[0]} samples at {sample_rate} Hz",
+        verbose,
+        start,
+    )
     try:
         reduced = preprocessor.nr.reduce_noise(y=original_audio, sr=sample_rate)
     except Exception as exc:
         raise RuntimeError("Noise reduction failed.") from exc
 
-    reduced_audio = normalize_audio_format(reduced)
+    reduced_audio = sanitize_audio(reduced, context="noise reduction", verbose=verbose, start=start, logger=logger)
     if reduced_audio.size == 0:
         return reduced_audio
+    logger("Running VAD speech detection", verbose, start)
     if not _speech_detected(original_audio, reduced_audio, preprocessor, sample_rate):
         logger("Audio skipped: no speech detected by VAD", verbose, start)
         return np.asarray([], dtype=np.float32)

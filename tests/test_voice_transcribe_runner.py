@@ -18,7 +18,7 @@ class FakeRuntime:
 
 def make_args(**overrides: object) -> argparse.Namespace:
     values = {
-        "wav_path": None,
+        "input_path": None,
         "verbose": True,
         "silence_detect": True,
         "vad_mode": 3,
@@ -135,7 +135,7 @@ def test_execute_transcribe_args_runs_file_mode_and_logs_completion() -> None:
     file_calls: list[tuple[object, object, object, object, float]] = []
 
     result = execute_transcribe_args(
-        args=make_args(wav_path=pathlib.Path("sample.wav")),
+        args=make_args(input_path=pathlib.Path("sample.wav")),
         perf_counter_fn=lambda: next(perf_values),
         configure_runtime_env_fn=lambda: None,
         create_runtime_fn=lambda **kwargs: FakeRuntime(),

@@ -25,6 +25,7 @@ from local_ai.slices.voice.entrypoint import dispatch_voice_entry
 from local_ai.infrastructure.openvino.runtime_env import configure_openvino_runtime_env
 from network_guard import enable_loopback_only_network
 from pyspy_profile import start_py_spy_profile, stop_py_spy_profile
+from voice_runtime import likely_reason_details
 from local_ai.infrastructure.openvino.whisper import (
     create_whisper_runtime,
 )
@@ -51,10 +52,10 @@ def run_file_mode(
     generate_kwargs: dict[str, object],
     start: float,
 ) -> int:
-    if args.wav_path is None:
-        return fail("Internal error: file mode requires wav_path.", exit_code=9)
+    if args.input_path is None:
+        return fail("Internal error: file mode requires input_path.", exit_code=9)
     response = execute_transcribe_file(
-        request=TranscribeFileRequest(wav_path=args.wav_path, verbose=args.verbose),
+        request=TranscribeFileRequest(input_path=args.input_path, verbose=args.verbose),
         pipe=pipe,
         audio_preprocessor=audio_preprocessor,
         generate_kwargs=generate_kwargs,
@@ -121,7 +122,7 @@ def build_transcribe_parser(*, include_web_flag: bool = False) -> argparse.Argum
             action="store_true",
             help="Force the non-web CLI mode for file or live microphone transcription.",
         )
-    parser.add_argument("wav_path", type=pathlib.Path, nargs="?", help="Optional input .wav path.")
+    parser.add_argument("input_path", type=pathlib.Path, nargs="?", help="Optional input audio or video path.")
     parser.add_argument(
         "--device",
         default="NPU,GPU,CPU",
@@ -163,7 +164,7 @@ def build_transcribe_parser(*, include_web_flag: bool = False) -> argparse.Argum
         "--chunk-seconds",
         type=float,
         default=3.0,
-        help="Live mode chunk duration in seconds (used when wav_path is omitted).",
+        help="Live mode chunk duration in seconds (used when input_path is omitted).",
     )
     parser.add_argument("--profile", action="store_true", help="Enable py-spy profiling for this run.")
     parser.add_argument(

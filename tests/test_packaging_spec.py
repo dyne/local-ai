@@ -20,9 +20,11 @@ def test_make_spec_command_includes_uvicorn_collection() -> None:
     assert "--collect-submodules websockets" in makefile_text
     assert "frontend-build" in makefile_text
     assert '--add-data "$(FRONTEND_DIR)/dist$(DATA_SEP)$(FRONTEND_DIR)/dist"' in makefile_text
-    assert "run:\n\texec $(PYTHON) $(SCRIPT)" in makefile_text
-    assert "run-web:\n\texec $(PYTHON) $(SCRIPT) --web" in makefile_text
-    assert "run-server:\n\texec $(PYTHON) $(SCRIPT) --server" in makefile_text
+    assert "RUN_PREFIX :=" in makefile_text
+    assert "RUN_PREFIX := exec" in makefile_text
+    assert "run:\n\t$(RUN_PREFIX) $(PYTHON) $(SCRIPT)" in makefile_text
+    assert "run-web:\n\t$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --web" in makefile_text
+    assert "run-server:\n\t$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --server" in makefile_text
 
 
 def test_github_release_workflow_includes_uvicorn_collection() -> None:
