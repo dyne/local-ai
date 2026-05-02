@@ -9,9 +9,15 @@ from local_ai.slices.voice.shared.media_decode import decode_audio_frame, decode
 
 
 class FakeFrame:
-    def __init__(self, array: np.ndarray, sample_rate: int) -> None:
+    class _Layout:
+        def __init__(self, channels: int) -> None:
+            self.channels = [object() for _ in range(channels)]
+            self.nb_channels = channels
+
+    def __init__(self, array: np.ndarray, sample_rate: int, channels: int = 1) -> None:
         self._array = array
         self.sample_rate = sample_rate
+        self.layout = self._Layout(channels)
 
     def to_ndarray(self) -> np.ndarray:
         return self._array
@@ -24,6 +30,24 @@ def test_decode_audio_frame_downmixes_and_scales_integer_audio() -> None:
 
     assert audio.dtype == np.float32
     assert audio.tolist() == pytest.approx([0.0, 1.0], rel=1e-4)
+
+
+def test_decode_audio_frame_downmixes_packed_stereo_interleaved_audio() -> None:
+    frame = FakeFrame(np.array([[32767, -32768, -32768, 32767]], dtype=np.int16), 16000, channels=2)
+
+    audio = decode_audio_frame(frame)
+
+    assert audio.dtype == np.float32
+    assert audio.tolist() == pytest.approx([-1.5258789e-05, -1.5258789e-05], rel=1e-4, abs=1e-6)
+
+
+def test_decode_audio_frame_offsets_unsigned_integer_audio_before_scaling() -> None:
+    frame = FakeFrame(np.array([0, 128, 255], dtype=np.uint8), 16000)
+
+    audio = decode_audio_frame(frame)
+
+    assert audio.dtype == np.float32
+    assert audio.tolist() == pytest.approx([-1.0, 0.0, 0.9921875], rel=1e-4, abs=1e-6)
 
 
 def test_decode_media_file_concatenates_decoded_frames(tmp_path: pathlib.Path) -> None:
