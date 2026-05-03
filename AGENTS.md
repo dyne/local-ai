@@ -18,6 +18,10 @@ Browser UI implementation now also lives under:
 
 - `frontend/`
 
+App-shell role metadata lives under:
+
+- `local_ai/slices/app_shell/`
+
 ## Environment
 
 - Use Python `3.11` for install, validation, profiling, packaging, and test commands.
@@ -37,6 +41,12 @@ The repository is no longer a single-script implementation. It is now organized 
   - live transcription slice
   - streaming/chunking slice
   - browser/desktop web UI slice
+- `local_ai/slices/app_shell`
+  - app-level role catalog and shared app-shell web routes
+- `local_ai/slices/documents`
+  - placeholder documents slice boundaries for future implementation
+- `local_ai/slices/ocr`
+  - placeholder OCR slice boundaries for future implementation
 - `frontend`
   - Svelte UI compiled by Vite and served by the Python browser backend when built
 - top-level compatibility shells
@@ -135,6 +145,10 @@ This is intentionally concrete. The repository is voice-first today, with archit
 
 Useful current module boundaries:
 
+- `local_ai/slices/app_shell/role_catalog.py`
+- `local_ai/slices/app_shell/web.py`
+- `local_ai/slices/documents/`
+- `local_ai/slices/ocr/`
 - `local_ai/shared/domain/devices.py`
 - `local_ai/shared/domain/models.py`
 - `local_ai/shared/domain/errors.py`
@@ -151,6 +165,7 @@ Useful current module boundaries:
 - `frontend/src/lib/session-payload.js`
 
 When changing behavior, prefer editing the `local_ai/` package first and keep the top-level scripts as thin adapters.
+For new roles, add role metadata in `local_ai/slices/app_shell/role_catalog.py`, add per-role slice modules under `local_ai/slices/<role>/`, and avoid mixing non-voice behavior into `local_ai/slices/voice/web_ui/`.
 
 ## Testing Expectations
 
