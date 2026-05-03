@@ -6,6 +6,7 @@ import pathlib
 from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from local_ai.slices.app_shell.web import register_app_shell_routes
 
 
 def build_browser_app(
@@ -47,10 +48,6 @@ def build_browser_app(
     async def close_session(session_id: str) -> object:
         return await close_session_handler(session_id)
 
-    if app_roles_handler is not None:
-
-        @app.get("/api/app/roles")
-        async def app_roles() -> object:
-            return await app_roles_handler()
+    register_app_shell_routes(app, app_roles_handler=app_roles_handler)
 
     return app
