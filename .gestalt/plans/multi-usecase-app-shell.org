@@ -1,0 +1,153 @@
+#+TITLE: Multi Use-Case App Shell
+#+SUBTITLE: Extend Local AI beyond voice transcription with maintainable role switching
+#+DATE: 2026-05-03
+#+KEYWORDS: frontend backend use-cases app-shell svelte fastapi vsa repr hex
+
+* DONE [#A] Establish Use-Case Boundaries And Contracts
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Define the smallest shared vocabulary that lets Local AI expose multiple functional roles without coupling every role to voice transcription.
+:Notes: Challenge the first idea of making a generic plugin system. The current repo is still small, so prefer a typed in-repo registry and explicit endpoints over dynamic loading or new dependencies.
+:END:
+
+** DONE [#A] Inventory the current voice-specific UI and API boundaries
+:PROPERTIES:
+:Why: The current browser app is shaped around microphone transcription: one Svelte root component, voice-specific session routes, and a voice-specific service. Before adding document navigation or OCR placeholders, identify what is genuinely shared and what must stay inside the voice slice.
+:Change: Read `frontend/src/App.svelte`, `frontend/src/lib/runtime-config.js`, `frontend/src/lib/session-payload.js`, `local_ai/slices/voice/web_ui/app_factory.py`, `local_ai/slices/voice/web_ui/service.py`, and `browser_webrtc.py`. Record a short implementation note in the final commit message or nearby plan comments if anything surprising changes the approach.
+:Tests: No tests needed unless files are changed.
+:Done when: The implementation target is clear: shared app shell and role metadata are separated from voice session/audio behavior.
+:END:
+
+** DONE [#A] Define backend role metadata as a small domain concept
+:PROPERTIES:
+:Why: The frontend needs to know which Local AI roles exist without hard-coding all labels, statuses, and route names in `App.svelte`.
+:Change: Add a small shared web role module, for example `local_ai/slices/app_shell/role_catalog.py`, containing a `LocalAiRole` dataclass or Pydantic model with fields such as `id`, `label`, `summary`, `status`, `route`, and optional `primary_action`. Include three roles: `voice`, `documents`, and `ocr`. Mark `voice` as available and the others as planned/placeholder. Keep this static and in-repo for now.
+:Tests: Add focused pytest coverage for the role catalog shape and ordering.
+:Done when: Backend code can return role metadata without importing voice runtime or initializing OpenVINO.
+:END:
+
+** DONE [#B] Add explicit REPR-style app-shell endpoint
+:PROPERTIES:
+:Why: A dedicated endpoint gives the Svelte app a stable backend contract for app-level navigation while keeping voice routes intact.
+:Change: Extend the FastAPI app factory with `GET /api/app/roles` or an equivalent app-shell route. Return the role catalog response. Keep existing `/session`, `/audio/{session_id}`, `/events/{session_id}`, and `/session/{session_id}` behavior unchanged for voice.
+:Tests: Add or update app factory tests to assert the role endpoint returns all roles and that the existing voice routes remain registered.
+:Done when: The backend exposes app-level role metadata through a route that does not depend on active voice sessions.
+:END:
+
+* DONE [#A] Refactor Frontend Into App Shell Plus Voice Feature
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Make role switching a first-class UI structure while preserving the current voice transcription workflow.
+:Notes: Do not introduce a router dependency. Svelte component state is enough: the app has three top-level roles and no deep navigation requirement yet.
+:END:
+
+** DONE [#A] Split the current Svelte root into shell and voice components
+:PROPERTIES:
+:Why: `App.svelte` currently mixes application layout, voice controls, audio capture, websocket streaming, transcript rendering, and styling. Multiple roles will become hard to maintain if all behavior stays in one component.
+:Change: Create `frontend/src/lib/roles.js` for client-side role helpers if needed, `frontend/src/components/AppShell.svelte` for top-level layout/navigation, and `frontend/src/features/voice/VoiceTranscription.svelte` for the existing voice workflow. Move voice-only state and functions from `App.svelte` into the voice component. Keep `App.svelte` as the composition root.
+:Tests: Run existing Vitest tests. Add utility tests only if role parsing or selection logic is extracted into JavaScript.
+:Done when: `App.svelte` composes the shell and active role view, while voice recording/transcription logic lives under `frontend/src/features/voice/`.
+:END:
+
+** DONE [#A] Add maintainable role navigation without changing the voice contract
+:PROPERTIES:
+:Why: Users need to switch between Local AI roles, but the existing voice API should not be renamed or broken as part of a structural refactor.
+:Change: Render role navigation from backend-provided metadata when available, with a local fallback matching the same shape. Use a compact tab/sidebar pattern suitable for a productivity app. Selecting `voice` shows the current voice transcription view. Selecting `documents` or `ocr` shows a placeholder workspace state with no fake functionality.
+:Tests: Add Vitest coverage for runtime role metadata parsing if implemented in a utility module. Manually check that voice controls still call `/session`, `/audio/{session_id}`, and `/events/{session_id}` unchanged.
+:Done when: The UI exposes Voice, Documents, and OCR roles and switching roles does not start or stop voice capture unexpectedly except when leaving an active voice session by explicit component cleanup.
+:END:
+
+** DONE [#B] Replace voice-first visual framing with Local AI app framing
+:PROPERTIES:
+:Why: The application is becoming Local AI with multiple roles, not only Local AI Voice. The first screen should communicate the selected role while keeping dense, practical controls.
+:Change: Update headings, title, and layout language to make `Local AI` the app identity and `Voice Transcription` one role. Avoid marketing hero treatment, nested cards, oversized copy, decorative orbs, and one-note color palettes. Keep controls stable and readable on desktop and mobile.
+:Tests: Run `cd frontend && npm run build`. If browser tooling is available, inspect the built app at desktop and mobile widths.
+:Done when: The UI clearly supports multiple roles while the voice screen remains immediately usable.
+:END:
+
+* DONE [#A] Create Backend Structure For Future Document And OCR Slices
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Prepare empty but coherent backend slice boundaries for document navigation and OCR without implementing their domain behavior yet.
+:Notes: Keep this as scaffolding only. Do not add OCR, PDF, embedding, vector database, or document parser dependencies in this plan.
+:END:
+
+** DONE [#A] Add placeholder VSA slice packages for documents and OCR
+:PROPERTIES:
+:Why: Future work needs obvious homes that follow the repo architecture instead of being appended to the voice web service.
+:Change: Add packages such as `local_ai/slices/documents/` and `local_ai/slices/ocr/` with minimal `__init__.py` files and, only if useful, placeholder `request.py`, `response.py`, or `service.py` modules documenting the intended REPR boundary. Keep code importable and dependency-free.
+:Tests: Add a lightweight import test if new modules contain executable code. Otherwise skip tests.
+:Done when: The repository has clear slice directories for documents and OCR with no runtime behavior pretending to be complete.
+:END:
+
+** DONE [#B] Introduce app-shell composition without moving voice runtime setup
+:PROPERTIES:
+:Why: The web server currently starts as a voice server because it must initialize Whisper. App-level routes should be composed around voice without forcing future roles to initialize voice models.
+:Change: Keep `browser_webrtc.py` responsible for current voice startup, but isolate generic app-shell route registration from voice service construction. Prefer a small function that adds app-shell routes to an existing `FastAPI` app or accepts app-shell handlers in `build_browser_app`.
+:Tests: Update backend tests to verify app-shell routes can be built with simple handlers and voice service tests still build the same app.
+:Done when: Future document/OCR endpoints can be added without editing voice inference or session internals.
+:END:
+
+** DONE [#C] Document the extension pattern in `AGENTS.md` if the structure changes
+:PROPERTIES:
+:Why: Repo guidance should tell future agents where to add new Local AI roles and where not to put cross-role code.
+:Change: Add a concise LLM-oriented note to `AGENTS.md` describing the app shell, role catalog, and expected slice placement for future roles. Keep it short and only update it after code structure exists.
+:Tests: No tests needed for documentation-only changes.
+:Done when: `AGENTS.md` points future work toward the app-shell and per-role slice boundaries.
+:END:
+
+* DONE [#B] Validate Existing Voice Behavior And Build Flow
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Prove the structural refactor did not break the current voice transcription browser workflow or packaging assumptions.
+:Notes: Run focused tests after each L2 with code changes, then full validation at the end of this L1 per repo workflow.
+:END:
+
+** DONE [#A] Run backend tests for app factory and voice web UI
+:PROPERTIES:
+:Why: The backend changes touch route composition, so route registration and session behavior need regression coverage.
+:Change: Run focused pytest files for browser app factory, server bootstrap, runtime config/page loading, and any new app-shell tests.
+:Tests: `py -3.11 -m pytest tests/test_browser_app_factory.py tests/test_browser_server_bootstrap.py tests/test_browser_page_loader.py` plus new app-shell tests.
+:Done when: Focused backend tests pass or failures are fixed in the same L2 commit.
+:END:
+
+** DONE [#A] Run frontend tests and production build
+:PROPERTIES:
+:Why: The Svelte app will be split into multiple components and role views, so both utility tests and the Vite build need to pass.
+:Change: Run the frontend test and build commands from the existing stack.
+:Tests: `cd frontend && npm test`; `cd frontend && npm run build`.
+:Done when: Vitest and Vite build both pass.
+:END:
+
+** DONE [#B] Run minimum routine validation
+:PROPERTIES:
+:Why: This is a cross-cutting structural change, so the repo minimum validation should catch import, syntax, and integration regressions.
+:Change: Run the documented minimum validation commands. If local environment blocks `py -3.11`, use the repo virtualenv Python and note the substitution in the final summary.
+:Tests: `py -3.11 -m pytest`; `py -3.11 -m py_compile local-ai-voice.py local_ai_voice.py voice_runtime.py browser_webrtc.py`; `cd frontend && npm test`; `cd frontend && npm run build`.
+:Done when: All minimum validation passes or any remaining environment-only blocker is clearly documented.
+:END:
+
+* DONE [#C] Prepare Reviewer Summary And Follow-Up Boundaries
+:PROPERTIES:
+:Effort: 0.25 day
+:Goal: Make the change easy to review and make clear that document navigation and OCR are placeholders, not implemented features.
+:Notes: Keep the summary factual. Do not imply OCR or document navigation works until dedicated slices are implemented.
+:END:
+
+** DONE [#B] Summarize changed boundaries for reviewers
+:PROPERTIES:
+:Why: Reviewers need to understand that this is an enabling refactor, not a feature-complete document/OCR implementation.
+:Change: In the final implementation summary, list the new app-shell files, moved frontend voice files, new role metadata endpoint, and unchanged voice API routes.
+:Tests: No tests needed.
+:Done when: Reviewer summary explains what moved, what stayed compatible, and what future work remains.
+:END:
+
+** DONE [#C] Capture next implementation candidates without adding scope
+:PROPERTIES:
+:Why: The natural next requests will be document navigation and OCR. Capturing obvious next steps prevents this structural plan from expanding into premature feature work.
+:Change: Add a brief follow-up list in the final response or a small docs note only if requested: document source ingestion, OCR image upload route, model/runtime selection per role, and shared job/result history.
+:Tests: No tests needed.
+:Done when: Future feature candidates are named but not implemented as part of this plan.
+:END:
+
+
