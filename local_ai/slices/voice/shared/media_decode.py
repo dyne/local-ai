@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable
+import io
 
 import av
 import numpy as np
@@ -67,4 +68,24 @@ def decode_media_file(
             sample_rate = int(frame.sample_rate)
     if not decoded_frames or sample_rate is None:
         raise ValueError(f"No decodable audio stream found: {path}")
+    return np.concatenate(decoded_frames), sample_rate
+
+
+def decode_media_bytes(
+    payload: bytes,
+    *,
+    format_hint: str | None = None,
+    open_container: Callable[..., object] = av.open,
+) -> tuple[np.ndarray, int] | None:
+    with open_container(io.BytesIO(payload), format=format_hint) as container:
+        decoded_frames: list[np.ndarray] = []
+        sample_rate: int | None = None
+        for frame in container.decode(audio=0):
+            mono = decode_audio_frame(frame)
+            if mono.size == 0:
+                continue
+            decoded_frames.append(mono)
+            sample_rate = int(frame.sample_rate)
+    if not decoded_frames or sample_rate is None:
+        return None
     return np.concatenate(decoded_frames), sample_rate
