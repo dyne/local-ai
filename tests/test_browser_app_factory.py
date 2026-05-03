@@ -24,6 +24,7 @@ def test_build_browser_app_registers_expected_routes() -> None:
     assert (("DELETE",), "/session/{session_id}") in routes
     assert ((), "/audio/{session_id}") in routes
     assert (("GET",), "/api/app/roles") not in routes
+    assert (("POST",), "/api/voice/transcriptions") not in routes
 
 
 def test_build_browser_app_registers_app_roles_route_when_handler_provided() -> None:
@@ -44,6 +45,49 @@ def test_build_browser_app_registers_app_roles_route_when_handler_provided() -> 
 
     assert response.status_code == 200
     assert response.json() == {"roles": [{"id": "voice"}]}
+
+
+def test_build_browser_app_registers_upload_route_when_handler_provided() -> None:
+    async def upload_handler(request) -> object:
+        assert request.headers.get("x-source-name") == "sample.wav"
+        return {"text": "hello", "duration_seconds": 1.0, "sample_rate": 16000, "source_name": "sample.wav"}
+
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=lambda payload: None,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+        upload_transcription_handler=upload_handler,
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/voice/transcriptions",
+        content=b"stub",
+        headers={"x-source-name": "sample.wav", "content-type": "audio/wav"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "hello"
+
+
+def test_build_browser_app_upload_route_passes_empty_body_to_handler() -> None:
+    async def upload_handler(request) -> object:
+        assert await request.body() == b""
+        return {"ok": True}
+
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=lambda payload: None,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+        upload_transcription_handler=upload_handler,
+    )
+    client = TestClient(app)
+    response = client.post("/api/voice/transcriptions")
+
+    assert response.status_code == 200
 
 
 def test_build_browser_app_serves_static_assets_when_directory_exists(tmp_path: pathlib.Path) -> None:

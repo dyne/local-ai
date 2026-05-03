@@ -18,6 +18,7 @@ def build_browser_app(
     events_handler: Callable[[str], Awaitable[object]],
     close_session_handler: Callable[[str], Awaitable[object]],
     app_roles_handler: Callable[[], Awaitable[object]] | None = None,
+    upload_transcription_handler: Callable[[Request], Awaitable[object]] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Browser Mic Transcriber")
 
@@ -47,6 +48,12 @@ def build_browser_app(
     @app.delete("/session/{session_id}")
     async def close_session(session_id: str) -> object:
         return await close_session_handler(session_id)
+
+    if upload_transcription_handler is not None:
+
+        @app.post("/api/voice/transcriptions")
+        async def upload_transcription(request: Request) -> object:
+            return await upload_transcription_handler(request)
 
     register_app_shell_routes(app, app_roles_handler=app_roles_handler)
 
