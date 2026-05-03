@@ -26,6 +26,7 @@ from local_ai.slices.voice.web_ui.session_cleanup import cleanup_session
 from local_ai.slices.voice.web_ui.session_decoder import decode_session_message
 from local_ai.slices.voice.web_ui.session_state import DEFAULT_AUDIO_BITRATE, SessionState, create_session_state
 from local_ai.slices.voice.web_ui.socket_loop import handle_audio_socket_connection
+from local_ai.slices.app_shell.role_catalog import role_catalog_response
 
 DEFAULT_CHUNK_SECONDS = 1.5
 DEFAULT_OVERLAP_SECONDS = 0.0
@@ -87,6 +88,9 @@ class AudioStreamService:
         await session.queue.put(f"[debug] {message}")
 
     def build_app(self) -> FastAPI:
+        async def app_roles() -> JSONResponse:
+            return JSONResponse(role_catalog_response())
+
         async def events(session_id: str) -> StreamingResponse:
             session = self.sessions.get(session_id)
             if session is None:
@@ -106,6 +110,7 @@ class AudioStreamService:
             audio_handler=self._handle_audio_socket,
             events_handler=events,
             close_session_handler=close_session,
+            app_roles_handler=app_roles,
         )
 
     async def _create_session(self, payload: SessionConfig) -> JSONResponse:

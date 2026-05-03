@@ -6,6 +6,7 @@ import pathlib
 from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from local_ai.slices.app_shell.web import register_app_shell_routes
 
 
 def build_browser_app(
@@ -16,6 +17,7 @@ def build_browser_app(
     audio_handler: Callable[[str, WebSocket], Awaitable[None]],
     events_handler: Callable[[str], Awaitable[object]],
     close_session_handler: Callable[[str], Awaitable[object]],
+    app_roles_handler: Callable[[], Awaitable[object]] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Browser Mic Transcriber")
 
@@ -45,5 +47,7 @@ def build_browser_app(
     @app.delete("/session/{session_id}")
     async def close_session(session_id: str) -> object:
         return await close_session_handler(session_id)
+
+    register_app_shell_routes(app, app_roles_handler=app_roles_handler)
 
     return app

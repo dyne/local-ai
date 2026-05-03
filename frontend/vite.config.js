@@ -7,6 +7,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: {
+      "/api/app": "http://127.0.0.1:8000",
       "/session": "http://127.0.0.1:8000",
       "/events": "http://127.0.0.1:8000",
       "/audio": {
