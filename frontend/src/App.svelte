@@ -186,11 +186,10 @@
 <div class="shell">
   <main class="card">
     <section class="hero">
-      <p class="eyebrow">Local AI Voice</p>
-      <h1>Browser microphone transcription over the existing Python voice runtime.</h1>
+      <p class="eyebrow">Local AI</p>
+      <h1>Voice transcription of media files.</h1>
       <p class="lede">
-        The UI is now Svelte-based, but device selection, model resolution, streaming decode,
-        VAD, and OpenVINO inference still run on the same backend contracts.
+        Using Whisper.cpp to transcribe English spoken language into text using only local GPU/NPU.
       </p>
     </section>
 
