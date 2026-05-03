@@ -32,7 +32,7 @@ else
 RUN_PREFIX := exec
 endif
 
-.PHONY: all install install-build frontend-install frontend-test frontend-build spec build build-webrtc run run-web run-server test clean
+.PHONY: all install install-build frontend-install frontend-test frontend-build spec build build-webrtc run run-web run-server dev test clean
 
 all: install
 
@@ -93,6 +93,13 @@ run-web:
 	$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --web
 
 run-server:
+	$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --server
+
+dev: frontend-install
+	@echo "Starting frontend HMR server and backend API server..."
+	@$(NPM) --prefix $(FRONTEND_DIR) run dev & \
+	FRONTEND_PID=$$!; \
+	trap 'kill $$FRONTEND_PID 2>/dev/null' EXIT INT TERM; \
 	$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --server
 
 test: frontend-test
