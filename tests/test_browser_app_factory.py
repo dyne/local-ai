@@ -23,6 +23,27 @@ def test_build_browser_app_registers_expected_routes() -> None:
     assert (("GET",), "/events/{session_id}") in routes
     assert (("DELETE",), "/session/{session_id}") in routes
     assert ((), "/audio/{session_id}") in routes
+    assert (("GET",), "/api/app/roles") not in routes
+
+
+def test_build_browser_app_registers_app_roles_route_when_handler_provided() -> None:
+    async def app_roles_handler() -> object:
+        return {"roles": [{"id": "voice"}]}
+
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=lambda payload: None,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+        app_roles_handler=app_roles_handler,
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/app/roles")
+
+    assert response.status_code == 200
+    assert response.json() == {"roles": [{"id": "voice"}]}
 
 
 def test_build_browser_app_serves_static_assets_when_directory_exists(tmp_path: pathlib.Path) -> None:

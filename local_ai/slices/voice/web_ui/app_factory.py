@@ -16,6 +16,7 @@ def build_browser_app(
     audio_handler: Callable[[str, WebSocket], Awaitable[None]],
     events_handler: Callable[[str], Awaitable[object]],
     close_session_handler: Callable[[str], Awaitable[object]],
+    app_roles_handler: Callable[[], Awaitable[object]] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Browser Mic Transcriber")
 
@@ -45,5 +46,11 @@ def build_browser_app(
     @app.delete("/session/{session_id}")
     async def close_session(session_id: str) -> object:
         return await close_session_handler(session_id)
+
+    if app_roles_handler is not None:
+
+        @app.get("/api/app/roles")
+        async def app_roles() -> object:
+            return await app_roles_handler()
 
     return app
