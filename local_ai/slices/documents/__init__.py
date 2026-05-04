@@ -1,2 +1,2 @@
-"""Documents slice placeholder."""
+"""Documents slice contracts and services."""
 
