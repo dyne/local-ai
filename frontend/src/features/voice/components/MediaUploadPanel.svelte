@@ -34,13 +34,13 @@
 </script>
 
 <section class="upload" on:paste={handlePaste}>
-  <div class:drag-over={isDragOver} class="drop-zone" role="region" on:dragover|preventDefault={() => (isDragOver = true)} on:dragleave={() => (isDragOver = false)} on:drop={handleDrop}>
+  <div class:drag-over={isDragOver} class="drop-zone" role="region" aria-label="Media upload drop zone" aria-describedby="media-upload-hint" on:dragover|preventDefault={() => (isDragOver = true)} on:dragleave={() => (isDragOver = false)} on:drop={handleDrop}>
     <label class="picker">
       <input type="file" accept="audio/*,video/*,.wav,.mp3,.m4a,.ogg,.webm,.mp4,.mov,.mkv,.flac,.aac" on:change={handleInputChange} />
       Choose Audio/Video File
     </label>
     <p>Or drag/drop, or paste a clipboard file.</p>
-    <p class="hint">Supports audio or video files supported by this build.</p>
+    <p class="hint" id="media-upload-hint">Supports audio or video files supported by this build.</p>
   </div>
   <p class="status">Upload state: {uploadState}</p>
   {#if uploadError}
