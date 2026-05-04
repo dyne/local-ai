@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -149,3 +151,47 @@ def test_transcribe_uploaded_media_rejects_invalid_vad_mode() -> None:
             )
 
     assert exc_info.value.status_code == 422
+
+
+def test_transcribe_uploaded_media_cleans_temp_file_on_decode_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    created_paths: list[str] = []
+    original_named_temp_file = tempfile.NamedTemporaryFile
+
+    def _named_temp_file(*args, **kwargs):
+        handle = original_named_temp_file(delete=False, dir=tmp_path, suffix=".wav")
+        created_paths.append(handle.name)
+        return handle
+
+    def _raise_decode_error(path):
+        raise ValueError("No decodable audio stream found")
+
+    monkeypatch.setattr(
+        "local_ai.slices.voice.transcribe_uploaded_media.service.tempfile.NamedTemporaryFile",
+        _named_temp_file,
+    )
+    monkeypatch.setattr(
+        "local_ai.slices.voice.transcribe_uploaded_media.service.decode_media_file",
+        _raise_decode_error,
+    )
+
+    with pytest.raises(UploadedMediaError):
+        asyncio.run(
+            transcribe_uploaded_media(
+                request=TranscribeUploadedMediaRequest(source_name="bad.wav", mime_type="audio/wav", payload=b"abc"),
+                pipe=object(),
+                generate_kwargs={},
+                infer_lock=asyncio.Lock(),
+                logger=lambda *args: None,
+                start_time=0.0,
+                verbose=False,
+                likely_reason_details_fn=lambda exc: ["detail"],
+                to_thread_fn=asyncio.to_thread,
+            )
+        )
+
+    assert created_paths
+    for path in created_paths:
+        assert not Path(path).exists()
