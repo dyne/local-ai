@@ -41,6 +41,7 @@ The repository is no longer a single-script implementation. It is now organized 
   - live transcription slice
   - streaming/chunking slice
   - browser/desktop web UI slice
+  - uploaded media transcription slice
 - `local_ai/slices/app_shell`
   - app-level role catalog and shared app-shell web routes
 - `local_ai/slices/documents`
@@ -139,6 +140,7 @@ This is intentionally concrete. The repository is voice-first today, with archit
 
 - inference audio remains mono `float32` at `16000 Hz`
 - browser decode path remains decode -> denoise -> VAD -> final resample
+- uploaded media and CLI file mode share frame normalization through `local_ai/slices/voice/shared/media_decode.py`
 - live chunking and overlap settings must remain behaviorally stable unless intentionally changed and tested
 
 ## Repository Map
@@ -157,6 +159,7 @@ Useful current module boundaries:
 - `local_ai/slices/voice/transcribe_file/`
 - `local_ai/slices/voice/transcribe_live/`
 - `local_ai/slices/voice/transcribe_stream/`
+- `local_ai/slices/voice/transcribe_uploaded_media/`
 - `local_ai/slices/voice/web_ui/`
 - `local_ai/slices/voice/entrypoint.py`
 - `local_ai/slices/voice/transcribe_runner.py`
@@ -166,6 +169,7 @@ Useful current module boundaries:
 
 When changing behavior, prefer editing the `local_ai/` package first and keep the top-level scripts as thin adapters.
 For new roles, add role metadata in `local_ai/slices/app_shell/role_catalog.py`, add per-role slice modules under `local_ai/slices/<role>/`, and avoid mixing non-voice behavior into `local_ai/slices/voice/web_ui/`.
+For voice UI changes, keep push-to-talk and upload/drop/paste input-mode behavior in `frontend/src/features/voice/` and keep backend upload handling under `/api/voice/transcriptions`.
 
 ## Testing Expectations
 

@@ -7,7 +7,7 @@ from typing import Any
 
 import av
 import numpy as np
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ValidationError
 
@@ -27,10 +27,54 @@ from local_ai.slices.voice.web_ui.session_decoder import decode_session_message
 from local_ai.slices.voice.web_ui.session_state import DEFAULT_AUDIO_BITRATE, SessionState, create_session_state
 from local_ai.slices.voice.web_ui.socket_loop import handle_audio_socket_connection
 from local_ai.slices.app_shell.role_catalog import role_catalog_response
+from local_ai.slices.voice.transcribe_uploaded_media.request import TranscribeUploadedMediaRequest
+from local_ai.slices.voice.transcribe_uploaded_media.service import (
+    UploadedMediaError,
+    MAX_UPLOAD_BYTES,
+    transcribe_uploaded_media,
+)
 
 DEFAULT_CHUNK_SECONDS = 1.5
 DEFAULT_OVERLAP_SECONDS = 0.0
 MAX_ENCODED_BUFFER_BYTES = 4 * 1024 * 1024
+
+
+def _is_local_client(host: str | None) -> bool:
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
+async def _read_bounded_body(request: Request, max_upload_bytes: int | None) -> bytes:
+    if max_upload_bytes is not None:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                declared_size = int(content_length)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"reason": "Invalid Content-Length.", "details": ["Expected an integer byte size."]},
+                ) from exc
+            if declared_size > max_upload_bytes:
+                max_mb = max_upload_bytes // (1024 * 1024)
+                raise HTTPException(
+                    status_code=413,
+                    detail={"reason": "Upload too large.", "details": [f"Max upload size is {max_mb} MB."]},
+                )
+
+    chunks: list[bytes] = []
+    total_size = 0
+    async for chunk in request.stream():
+        if not chunk:
+            continue
+        total_size += len(chunk)
+        if max_upload_bytes is not None and total_size > max_upload_bytes:
+            max_mb = max_upload_bytes // (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail={"reason": "Upload too large.", "details": [f"Max upload size is {max_mb} MB."]},
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 class SessionConfig(BaseModel):
@@ -103,6 +147,51 @@ class AudioStreamService:
                 await self._cleanup_session(session)
             return JSONResponse({"ok": True})
 
+        async def upload_transcription(request: Request) -> JSONResponse:
+            source_name = request.headers.get("x-source-name", "upload")
+            content_type = request.headers.get("content-type")
+            silence_detect = request.query_params.get("silence_detect", "true").lower() != "false"
+            client_host = request.client.host if request.client is not None else None
+            max_upload_bytes = None if _is_local_client(client_host) else MAX_UPLOAD_BYTES
+            try:
+                vad_mode = int(request.query_params.get("vad_mode", "3"))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail={"reason": "Invalid vad_mode.", "details": ["Expected integer 0-3."]}) from exc
+            if vad_mode not in (0, 1, 2, 3):
+                raise HTTPException(status_code=400, detail={"reason": "Invalid vad_mode.", "details": ["Use one of: 0, 1, 2, 3."]})
+            try:
+                payload = await _read_bounded_body(request, max_upload_bytes)
+                response = await transcribe_uploaded_media(
+                    request=TranscribeUploadedMediaRequest(
+                        source_name=source_name,
+                        mime_type=content_type,
+                        payload=payload,
+                        silence_detect=silence_detect,
+                        vad_mode=vad_mode,
+                        max_upload_bytes=max_upload_bytes,
+                    ),
+                    pipe=self.ctx.pipe,
+                    generate_kwargs=self.ctx.generate_kwargs,
+                    infer_lock=self.ctx.infer_lock,
+                    logger=self.logger,
+                    start_time=self.ctx.start_time,
+                    verbose=self.ctx.verbose,
+                    likely_reason_details_fn=self.likely_reason_details_fn,
+                    to_thread_fn=self.to_thread_fn,
+                )
+            except UploadedMediaError as exc:
+                raise HTTPException(status_code=exc.status_code, detail={"reason": exc.reason, "details": exc.details}) from exc
+
+            return JSONResponse(
+                {
+                    "text": response.text,
+                    "duration_seconds": response.duration_seconds,
+                    "sample_rate": response.sample_rate,
+                    "source_name": response.source_name,
+                    "details": response.details,
+                }
+            )
+
         return build_browser_app(
             index_html=self.index_html,
             static_assets_dir=self.static_assets_dir,
@@ -111,6 +200,7 @@ class AudioStreamService:
             events_handler=events,
             close_session_handler=close_session,
             app_roles_handler=app_roles,
+            upload_transcription_handler=upload_transcription,
         )
 
     async def _create_session(self, payload: SessionConfig) -> JSONResponse:

@@ -91,3 +91,17 @@ def test_decode_media_file_raises_when_no_audio_stream(tmp_path: pathlib.Path) -
 
     with pytest.raises(ValueError, match="No decodable audio stream found"):
         decode_media_file(media_path, open_container=lambda source: FakeContainer())
+
+
+def test_decode_audio_frame_clips_float_values() -> None:
+    frame = FakeFrame(np.array([1.3, -1.6, 0.25], dtype=np.float32), 16000)
+
+    audio = decode_audio_frame(frame)
+
+    assert audio.tolist() == pytest.approx([1.0, -1.0, 0.25], rel=1e-5)
+
+
+def test_decode_audio_frame_handles_empty_frame() -> None:
+    frame = FakeFrame(np.array([], dtype=np.int16), 16000)
+    audio = decode_audio_frame(frame)
+    assert audio.size == 0

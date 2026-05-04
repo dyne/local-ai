@@ -1,0 +1,199 @@
+#+TITLE: Voice Input Modes
+#+SUBTITLE: Add push-to-talk, upload, drag-and-drop, and clipboard media ingestion for voice transcription
+#+DATE: 2026-05-03
+#+KEYWORDS: voice transcription push-to-talk upload drag-drop clipboard media pyav svelte fastapi
+
+* DONE [#A] Define Voice Input Mode Contracts
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Specify how voice transcription accepts live microphone windows and whole media files without mixing transport details into inference logic.
+:Notes: Prefer the existing stack: Svelte, FastAPI, WebSocket/SSE, PyAV, NumPy, and OpenVINO Whisper. Do not add new media dependencies unless a concrete PyAV limitation blocks an important format.
+:END:
+
+** DONE [#A] Inventory current voice live-stream and file decode paths
+:PROPERTIES:
+:Why: The browser currently streams MediaRecorder chunks over WebSocket, while CLI file mode has a shared media decoder. The plan should reuse those pieces instead of building a parallel upload pipeline.
+:Change: Read `frontend/src/features/voice/VoiceTranscription.svelte`, `frontend/src/lib/session-payload.js`, `local_ai/slices/voice/web_ui/service.py`, `local_ai/slices/voice/web_ui/audio_decode.py`, `local_ai/slices/voice/shared/media_decode.py`, and `local_ai/slices/voice/transcribe_file/service.py`. Identify which decode behavior can be shared between browser uploads and CLI files.
+:Tests: No tests needed unless code changes.
+:Done when: The implementation target is clear: one shared media decode behavior for uploaded files and one live chunk path for push-to-talk.
+:END:
+
+** DONE [#A] Define request and response boundaries for uploaded media transcription
+:PROPERTIES:
+:Why: Upload/drop/paste should be a normal REPR route with a clear response, not a special case hidden inside the live WebSocket session protocol.
+:Change: Add a new voice web route contract such as `POST /api/voice/transcriptions` accepting multipart `file`. Response should include at least `text`, `duration_seconds`, `sample_rate`, `source_name`, and optional diagnostic details. Keep route naming under `/api/voice/` to leave room for other Local AI roles.
+:Tests: Add backend tests for success, decode failure, missing file, and no-audio-stream cases.
+:Done when: Uploaded media has an explicit route contract independent from live push-to-talk sessions.
+:END:
+
+** DONE [#B] Define push-to-talk lifecycle semantics
+:PROPERTIES:
+:Why: Push-to-talk is not the same UX as continuous streaming. The session should start on press, stream while held/toggled, and stop cleanly when released or cancelled.
+:Change: Specify frontend states: `idle`, `requesting-mic`, `recording`, `stopping`, `transcribing`, and `error`. Decide whether the first implementation uses hold-to-record, click-to-toggle, or both; prefer both on desktop/mobile if simple. Keep the backend WebSocket protocol compatible unless a minimal stop/finalize message is needed.
+:Tests: Add frontend utility tests if state transitions are extracted. Backend tests only if session close/finalization behavior changes.
+:Done when: The UI and backend have a documented, minimal lifecycle for live voice capture.
+:END:
+
+* DONE [#A] Consolidate Media Decode For Broad Audio And Video Support
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Use PyAV as the single backend path for extracting mono float32 audio from many audio and video containers.
+:Notes: "As many formats as possible" means whatever FFmpeg/PyAV in the packaged app can decode. The app should describe failures clearly instead of promising every codec.
+:END:
+
+** DONE [#A] Move frame decoding into one shared implementation
+:PROPERTIES:
+:Why: `web_ui/audio_decode.py` and `shared/media_decode.py` both decode PyAV audio frames. Duplicate frame logic risks inconsistent behavior between live browser chunks, uploaded files, and CLI media files.
+:Change: Keep one `decode_audio_frame` implementation in `local_ai/slices/voice/shared/media_decode.py` and make web decode import it. Preserve correct handling for planar audio, packed stereo, signed integer PCM, unsigned PCM, and float formats.
+:Tests: Extend `tests/test_media_decode.py` for planar stereo, packed stereo, unsigned 8-bit PCM, signed 16-bit PCM, float clipping, empty frames, and sample-rate preservation.
+:Done when: Browser and file decode paths use the same frame normalization rules.
+:END:
+
+** DONE [#A] Add uploaded media decode service that accepts audio and video
+:PROPERTIES:
+:Why: Upload, drag-and-drop, and paste all produce files/blobs. The backend should accept any media file PyAV can open, select the first audio stream, and ignore video frames.
+:Change: Add a focused service under a voice upload slice, for example `local_ai/slices/voice/transcribe_uploaded_media/`, with request, service, and response modules. Write uploaded bytes to a temporary file or decode from a file-like object based on the simplest PyAV-compatible path. Enforce a reasonable maximum upload size using existing FastAPI facilities or explicit read-size checks.
+:Tests: Unit-test the service with fake `open_container` and small generated WAV fixtures. Add a test proving a file with no audio stream returns a concise diagnostic error.
+:Done when: Uploaded audio/video media can be decoded into mono `float32`, resampled to `16000 Hz`, preprocessed, and sent through the same `transcribe_chunk` policy as file mode.
+:END:
+
+** DONE [#B] Report supported-format limitations honestly
+:PROPERTIES:
+:Why: PyAV/FFmpeg support depends on the packaged binaries. The UI and errors should not claim universal support when a codec may be absent locally.
+:Change: Add concise backend error details for container open failure, missing audio stream, unsupported codec, oversized upload, and transcription failure. In the frontend, use wording like "Audio or video files supported by this build" rather than a hardcoded exhaustive format list.
+:Tests: Add backend tests for representative exception paths.
+:Done when: Failed media uploads tell the user what failed and likely why without exposing noisy stack traces.
+:END:
+
+* DONE [#A] Implement Voice Frontend Input Modes
+:PROPERTIES:
+:Effort: 1.5 days
+:Goal: Give the voice role a maintainable UI for push-to-talk, file picker upload, drag-and-drop, and clipboard paste.
+:Notes: Keep the voice role dense and task-focused. Avoid landing-page copy, nested cards, or custom JavaScript frameworks.
+:END:
+
+** DONE [#A] Refactor the voice component into input-mode subcomponents
+:PROPERTIES:
+:Why: The current voice component owns capture, controls, transcript output, and settings. Adding upload/drop/paste directly into it would make it hard to maintain.
+:Change: Split into small Svelte components such as `PushToTalkPanel.svelte`, `MediaUploadPanel.svelte`, `TranscriptOutput.svelte`, and `VoiceSettings.svelte`. Keep shared helpers under `frontend/src/features/voice/` or `frontend/src/lib/voice/`.
+:Tests: Run existing Vitest tests. Add tests only for extracted pure JavaScript helpers.
+:Done when: The voice role composes clear subcomponents and existing microphone transcription still works.
+:END:
+
+** DONE [#A] Add push-to-talk controls for pointer, keyboard, and touch
+:PROPERTIES:
+:Why: Push-to-talk needs to work on desktop and mobile without requiring precise long-form setup.
+:Change: Add a large microphone action button with pointer/touch hold behavior and an optional toggle mode. Support keyboard activation with Space when the control is focused. Prevent duplicate recording starts, handle permission errors, and always release microphone tracks on stop/unmount.
+:Tests: Unit-test state helpers if extracted. Manually validate start/stop behavior in the browser after implementation.
+:Done when: Users can record by holding or toggling a control and the existing backend live stream receives audio chunks as before.
+:END:
+
+** DONE [#A] Add file picker, drag-and-drop, and paste ingestion
+:PROPERTIES:
+:Why: Users need to transcribe existing audio/video files from local storage, drag/drop, and mobile clipboard/share flows where available.
+:Change: Add a file input accepting broad media MIME patterns (`audio/*`, `video/*`) plus extension fallback text in the UI. Add drag-over/drop handling for files. Add paste handling using `ClipboardEvent.clipboardData.files` and, where browser support allows, `navigator.clipboard.read()` for image/media clipboard items. On mobile, make the file picker prominent because clipboard file support varies.
+:Tests: Add frontend helper tests for choosing the first supported file from file lists or clipboard items if this logic is extracted.
+:Done when: The same upload code path handles selected, dropped, and pasted media files.
+:END:
+
+** DONE [#B] Show upload progress and result history without extra storage
+:PROPERTIES:
+:Why: Large video files may take time to upload and decode. Users need visible progress and should not lose recent transcript results immediately.
+:Change: Use browser upload progress only if simple with `XMLHttpRequest`; otherwise show deterministic states: `uploading`, `decoding`, `transcribing`, `done`, `error`. Keep recent results in component state for the current session only. Do not add persistence yet.
+:Tests: Test pure state reducers/helpers if added. Manual browser validation for success and failure states.
+:Done when: The UI clearly shows which media item is being processed and displays transcript/error results for recent items.
+:END:
+
+* DONE [#A] Add Backend Upload Endpoint And Wire It To Voice Runtime
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Let browser uploads transcribe through the same OpenVINO Whisper runtime used by live voice.
+:Notes: Avoid creating a second model/runtime instance. Reuse `AudioStreamService.ctx.pipe`, `generate_kwargs`, and `infer_lock`.
+:END:
+
+** DONE [#A] Add FastAPI upload route to the voice web app
+:PROPERTIES:
+:Why: The frontend needs a stable endpoint for media files that does not interfere with live WebSocket sessions.
+:Change: Add `POST /api/voice/transcriptions` to `build_browser_app` and `AudioStreamService.build_app`. Accept `UploadFile`, validate presence and size, pass the stream or temp path to the uploaded-media service, and return JSON. Keep the existing `/session`, `/audio/{session_id}`, and `/events/{session_id}` routes unchanged.
+:Tests: Add app factory tests that the upload route exists and service tests for successful and failed upload handler calls.
+:Done when: Browser uploads can reach the voice runtime through an explicit backend endpoint.
+:END:
+
+** DONE [#A] Reuse preprocessing, resampling, VAD, and transcript policy
+:PROPERTIES:
+:Why: Uploaded media should behave like file-mode transcription: mono `float32`, `16000 Hz`, optional silence detection, transcript suppression policy, and concise runtime errors.
+:Change: Call shared `preprocess_audio`, `ensure_sample_rate`, `should_suppress_transcript`, and `transcribe_chunk`. Decide whether upload requests can set `silence_detect`, `vad_mode`, `task`, `language`, and `timestamps`; prefer minimal defaults first, then add options only if already exposed in the voice settings.
+:Tests: Unit-test that upload service calls preprocessing, resampling, suppression, and inference in order with fakes.
+:Done when: Uploaded audio/video transcription uses the same behavioral invariants as CLI file mode and live mode.
+:END:
+
+** DONE [#B] Clean up temporary upload resources reliably
+:PROPERTIES:
+:Why: Video uploads can be large, and failed decode/transcription paths must not leave temporary files open or accumulating.
+:Change: If temporary files are used, create them under a controlled temp directory and delete them in `finally`. If in-memory decode is used, enforce upload size limits before reading the full body.
+:Tests: Add a failure-path test proving cleanup runs after decode or inference exceptions.
+:Done when: Successful and failed uploads do not leave unmanaged temporary artifacts.
+:END:
+
+* DONE [#B] Preserve CLI File Mode And Packaging Behavior
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Keep current command-line media transcription and frozen-build media support working while adding browser uploads.
+:Notes: Any packaging changes for PyAV/FFmpeg must stay aligned across spec, GNUmakefile, and GitHub workflow.
+:END:
+
+** DONE [#B] Keep CLI file transcription on the same shared media decode path
+:PROPERTIES:
+:Why: CLI and browser uploads should not diverge in accepted formats or audio normalization.
+:Change: Update CLI file-mode tests as needed to use the same shared media decode service. Do not rename existing CLI flags unless already planned elsewhere.
+:Tests: Run `py -3.11 -m pytest tests/test_transcribe_file_service.py tests/test_media_decode.py`.
+:Done when: CLI file mode still accepts media files and shares decode behavior with browser uploads.
+:END:
+
+** DONE [#B] Verify packaged PyAV support remains declared
+:PROPERTIES:
+:Why: Broad media support depends on PyAV and its bundled FFmpeg libraries being present in frozen builds.
+:Change: Check `local-ai-voice.spec`, `GNUmakefile`, and `.github/workflows/build-and-release.yaml` for `av` hidden imports and binary/data collection needs. Update all three only if required by the upload implementation.
+:Tests: Run `py -3.11 -m pytest tests/test_packaging_spec.py`.
+:Done when: Packaging declarations still cover the media decode dependency used by both CLI and browser upload paths.
+:END:
+
+* DONE [#A] Validate Browser Voice Workflows
+:PROPERTIES:
+:Effort: 0.75 day
+:Goal: Prove push-to-talk and uploaded media workflows work without regressing current voice behavior.
+:Notes: Follow the repo loop: focused tests per changed L2, conventional commits per changed L2, and full tests at L1 completion when implementing this plan.
+:END:
+
+** DONE [#A] Run focused backend tests
+:PROPERTIES:
+:Why: The backend gains a new upload route and shared media decode behavior.
+:Change: Run focused pytest files for media decode, uploaded-media service, app factory, voice web service, and file transcription.
+:Tests: `py -3.11 -m pytest tests/test_media_decode.py tests/test_transcribe_file_service.py tests/test_browser_app_factory.py` plus new upload tests.
+:Done when: Focused backend tests pass or failures are fixed.
+:END:
+
+** DONE [#A] Run focused frontend tests and build
+:PROPERTIES:
+:Why: The voice UI is being split and gains new interaction modes.
+:Change: Run Vitest and Vite build from `frontend`.
+:Tests: `cd frontend && npm test`; `cd frontend && npm run build`.
+:Done when: Frontend tests and production build pass.
+:END:
+
+** TODO [#B] Manually smoke test the browser workflows
+:PROPERTIES:
+:Why: Pointer/touch/clipboard behavior is browser-dependent and needs a real browser check beyond unit tests.
+:Change: Start the local server, open the app, test push-to-talk start/stop, upload a small WAV, upload or drop a small MP4/WebM with audio, and paste a clipboard file where supported. Confirm microphone tracks stop after leaving the voice role or stopping capture.
+:Tests: Browser smoke test plus server logs for concise errors.
+:Done when: Voice transcription works for live push-to-talk and at least one uploaded audio file and one uploaded video file with audio.
+:END:
+
+** DONE [#C] Update reviewer summary and AGENTS notes if relevant
+:PROPERTIES:
+:Why: This change affects the main voice workflow and future maintainers need to know where each input mode lives.
+:Change: If implementation changes module boundaries, update `AGENTS.md` with a short note about voice input modes and shared media decoding. In the final summary, list supported workflows and known browser/codec limitations.
+:Tests: No tests needed for documentation-only changes.
+:Done when: Reviewers can see what changed, how it was validated, and which media limitations remain build-dependent.
+:END:
+

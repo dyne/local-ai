@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from browser_webrtc import AudioStreamService, ServerContext, SessionConfig
+from local_ai.slices.voice.web_ui.service import _is_local_client
 from local_ai.slices.voice.web_ui.session_state import SessionState
 
 
@@ -45,6 +46,14 @@ def make_session(session_id: str = "abc") -> SessionState:
         chunk_seconds=1.0,
         overlap_seconds=0.0,
     )
+
+
+def test_is_local_client_accepts_loopback_hosts() -> None:
+    assert _is_local_client("127.0.0.1")
+    assert _is_local_client("::1")
+    assert _is_local_client("localhost")
+    assert not _is_local_client("192.168.1.10")
+    assert not _is_local_client(None)
 
 
 @pytest.mark.anyio
