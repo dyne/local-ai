@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class TranscribeUploadedMediaRequest:
@@ -12,4 +14,5 @@ class TranscribeUploadedMediaRequest:
     payload: bytes
     silence_detect: bool = True
     vad_mode: int = 3
+    max_upload_bytes: int | None = DEFAULT_MAX_UPLOAD_BYTES
 

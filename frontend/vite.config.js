@@ -1,17 +1,20 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
+const backendUrl = process.env.LOCAL_AI_BACKEND_URL || `http://127.0.0.1:${process.env.LOCAL_AI_BACKEND_PORT || "8000"}`;
+const backendWsUrl = backendUrl.replace(/^http/, "ws");
+
 export default defineConfig({
   plugins: [svelte()],
   server: {
     host: "127.0.0.1",
     port: 5173,
     proxy: {
-      "/api/app": "http://127.0.0.1:8000",
-      "/session": "http://127.0.0.1:8000",
-      "/events": "http://127.0.0.1:8000",
+      "/api/app": backendUrl,
+      "/session": backendUrl,
+      "/events": backendUrl,
       "/audio": {
-        target: "ws://127.0.0.1:8000",
+        target: backendWsUrl,
         ws: true,
       },
     },

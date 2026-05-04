@@ -32,7 +32,7 @@ else
 RUN_PREFIX := exec
 endif
 
-.PHONY: all install install-build frontend-install frontend-test frontend-build spec build build-webrtc run run-web run-server dev test clean
+.PHONY: all install install-build frontend-install frontend-dev-install frontend-test frontend-build spec build build-webrtc run run-web run-server dev test clean
 
 all: install
 
@@ -49,6 +49,15 @@ install-build: $(VENV_PYTHON)
 
 frontend-install:
 	$(NPM) --prefix $(FRONTEND_DIR) ci
+
+frontend-dev-install:
+ifeq ($(OS),Windows_NT)
+	@if not exist "$(FRONTEND_DIR)\node_modules" $(NPM) --prefix $(FRONTEND_DIR) ci
+else
+	@if [ ! -d "$(FRONTEND_DIR)/node_modules" ]; then \
+		$(NPM) --prefix $(FRONTEND_DIR) ci; \
+	fi
+endif
 
 frontend-build: frontend-install
 	$(NPM) --prefix $(FRONTEND_DIR) run build
@@ -95,12 +104,25 @@ run-web:
 run-server:
 	$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --server
 
-dev: frontend-install
-	@echo "Starting frontend HMR server and backend API server..."
-	@$(NPM) --prefix $(FRONTEND_DIR) run dev & \
-	FRONTEND_PID=$$!; \
-	trap 'kill $$FRONTEND_PID 2>/dev/null' EXIT INT TERM; \
-	$(RUN_PREFIX) $(PYTHON) $(SCRIPT) --server
+dev: frontend-dev-install
+ifeq ($(OS),Windows_NT)
+	@powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 -Python "$(PYTHON)" -Script "$(SCRIPT)" -Npm "$(NPM)" -FrontendDir "$(FRONTEND_DIR)" -Port 8000
+else
+	@echo "Starting backend API server and frontend HMR server..."
+	@$(PYTHON) $(SCRIPT) --server & \
+	BACKEND_PID=$$!; \
+	trap 'kill $$BACKEND_PID 2>/dev/null' EXIT INT TERM; \
+	i=0; \
+	until $(PYTHON) -c "import socket; s=socket.create_connection(('127.0.0.1', 8000), 0.25); s.close()" 2>/dev/null; do \
+		i=$$((i + 1)); \
+		if [ $$i -ge 480 ]; then \
+			echo "Backend did not start on 127.0.0.1:8000 within 120s" >&2; \
+			exit 1; \
+		fi; \
+		sleep 0.25; \
+	done; \
+	$(RUN_PREFIX) $(NPM) --prefix $(FRONTEND_DIR) run dev
+endif
 
 test: frontend-test
 	$(PYTHON) -m pytest
