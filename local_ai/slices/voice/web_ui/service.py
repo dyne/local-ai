@@ -157,6 +157,8 @@ class AudioStreamService:
                 vad_mode = int(request.query_params.get("vad_mode", "3"))
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail={"reason": "Invalid vad_mode.", "details": ["Expected integer 0-3."]}) from exc
+            if vad_mode not in (0, 1, 2, 3):
+                raise HTTPException(status_code=400, detail={"reason": "Invalid vad_mode.", "details": ["Use one of: 0, 1, 2, 3."]})
             try:
                 payload = await _read_bounded_body(request, max_upload_bytes)
                 response = await transcribe_uploaded_media(
