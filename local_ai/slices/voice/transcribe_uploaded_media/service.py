@@ -68,6 +68,9 @@ async def transcribe_uploaded_media(
                 vad_mode=request.vad_mode,
             )
         except Exception as exc:
+            message = str(exc)
+            if "Invalid VAD mode" in message:
+                raise UploadedMediaError(422, "Invalid vad_mode.", ["Use one of: 0, 1, 2, 3."]) from exc
             raise UploadedMediaError(500, "Audio preprocessing setup failed.", [f"Runtime error: {exc}"]) from exc
         audio = preprocess_audio(audio, sample_rate, preprocessor, verbose, start_time, logger)
         if audio.size == 0:
