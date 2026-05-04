@@ -15,10 +15,10 @@ from local_ai.slices.voice.shared.audio_processing import (
 )
 from local_ai.slices.voice.shared.media_decode import decode_media_file
 from local_ai.slices.voice.shared.transcript_policy import should_suppress_transcript, transcribe_chunk
-from local_ai.slices.voice.transcribe_uploaded_media.request import TranscribeUploadedMediaRequest
+from local_ai.slices.voice.transcribe_uploaded_media.request import DEFAULT_MAX_UPLOAD_BYTES, TranscribeUploadedMediaRequest
 from local_ai.slices.voice.transcribe_uploaded_media.response import TranscribeUploadedMediaResponse
 
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_UPLOAD_BYTES = DEFAULT_MAX_UPLOAD_BYTES
 
 
 @dataclass
@@ -44,8 +44,9 @@ async def transcribe_uploaded_media(
 ) -> TranscribeUploadedMediaResponse:
     if not request.payload:
         raise UploadedMediaError(400, "Upload is empty.", ["No file bytes were provided."])
-    if len(request.payload) > MAX_UPLOAD_BYTES:
-        raise UploadedMediaError(413, "Upload too large.", [f"Max upload size is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."])
+    if request.max_upload_bytes is not None and len(request.payload) > request.max_upload_bytes:
+        max_mb = request.max_upload_bytes // (1024 * 1024)
+        raise UploadedMediaError(413, "Upload too large.", [f"Max upload size is {max_mb} MB."])
 
     suffix = Path(request.source_name).suffix or ".bin"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
@@ -56,7 +57,8 @@ async def transcribe_uploaded_media(
         try:
             audio, sample_rate = decode_media_file(temp_path)
         except ValueError as exc:
-            raise UploadedMediaError(422, "No decodable audio stream found.", [str(exc)]) from exc
+            detail = f"No decodable audio stream found in '{request.source_name}'."
+            raise UploadedMediaError(422, "No decodable audio stream found.", [detail]) from exc
         except Exception as exc:  # pragma: no cover
             raise UploadedMediaError(422, "Media decode failed.", [f"Runtime error: {exc}"]) from exc
 
