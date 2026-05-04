@@ -57,69 +57,76 @@
     if (isRecording()) {
       return;
     }
-    sessionId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now());
-    status = "requesting-mic";
+    try {
+      sessionId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now());
+      status = "requesting-mic";
 
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        sampleRate: 48000,
-        echoCancellation,
-        noiseSuppression,
-        autoGainControl,
-      },
-      video: false,
-    });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 48000,
+          echoCancellation,
+          noiseSuppression,
+          autoGainControl,
+        },
+        video: false,
+      });
 
-    const mimeType = preferredMimeType();
-    if (!mimeType) {
-      throw new Error("No supported Opus MediaRecorder MIME type");
-    }
-    const response = await fetch("/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        buildSessionPayload({
-          sessionId,
-          saveSample,
-          silenceDetect,
-          debug: clientDebug,
-          vadMode,
-          chunkSeconds,
-          overlapSeconds,
-          mimeType,
-          audioBitrate: TARGET_AUDIO_BITRATE,
-        }),
-      ),
-    });
-    if (!response.ok) {
-      throw new Error(`Session setup failed: ${await response.text()}`);
-    }
-    eventSource = new EventSource(`/events/${sessionId}`);
-    eventSource.onmessage = (event) => appendLine(event.data);
-    eventSource.onerror = () => (status = "error");
-
-    audioSocket = new WebSocket(`${wsBaseUrl()}/audio/${sessionId}`);
-    await new Promise((resolve, reject) => {
-      audioSocket.onopen = resolve;
-      audioSocket.onerror = () => reject(new Error("Audio socket failed to open"));
-    });
-    appendClientDebug("[client] audio websocket open");
-    mediaRecorder = new MediaRecorder(stream, {
-      mimeType,
-      audioBitsPerSecond: TARGET_AUDIO_BITRATE,
-    });
-    mediaRecorder.ondataavailable = async (event) => {
-      if (!event.data || event.data.size === 0) {
-        return;
+      const mimeType = preferredMimeType();
+      if (!mimeType) {
+        throw new Error("No supported Opus MediaRecorder MIME type");
       }
-      if (audioSocket?.readyState === WebSocket.OPEN) {
-        sentBlobCount += 1;
-        audioSocket.send(await event.data.arrayBuffer());
+      const response = await fetch("/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          buildSessionPayload({
+            sessionId,
+            saveSample,
+            silenceDetect,
+            debug: clientDebug,
+            vadMode,
+            chunkSeconds,
+            overlapSeconds,
+            mimeType,
+            audioBitrate: TARGET_AUDIO_BITRATE,
+          }),
+        ),
+      });
+      if (!response.ok) {
+        throw new Error(`Session setup failed: ${await response.text()}`);
       }
-    };
-    mediaRecorder.start(CHUNK_TIMESLICE_MS);
-    status = "recording";
+      eventSource = new EventSource(`/events/${sessionId}`);
+      eventSource.onmessage = (event) => appendLine(event.data);
+      eventSource.onerror = () => (status = "error");
+
+      audioSocket = new WebSocket(`${wsBaseUrl()}/audio/${sessionId}`);
+      await new Promise((resolve, reject) => {
+        audioSocket.onopen = resolve;
+        audioSocket.onerror = () => reject(new Error("Audio socket failed to open"));
+      });
+      appendClientDebug("[client] audio websocket open");
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType,
+        audioBitsPerSecond: TARGET_AUDIO_BITRATE,
+      });
+      mediaRecorder.ondataavailable = async (event) => {
+        if (!event.data || event.data.size === 0) {
+          return;
+        }
+        if (audioSocket?.readyState === WebSocket.OPEN) {
+          sentBlobCount += 1;
+          audioSocket.send(await event.data.arrayBuffer());
+        }
+      };
+      mediaRecorder.start(CHUNK_TIMESLICE_MS);
+      status = "recording";
+    } catch (error) {
+      status = "error";
+      appendLine(`[error] ${String(error?.message || error)}`);
+      await stop();
+      status = "error";
+    }
   }
 
   async function stop() {
