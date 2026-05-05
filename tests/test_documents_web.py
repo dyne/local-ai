@@ -41,6 +41,12 @@ class _IndexService:
         return IndexSourceResponse(status="invalid", message="no sources")
 
 
+class _ExplodingIndexService:
+    def execute(self, request):
+        _ = request
+        raise RuntimeError("recoll exploded")
+
+
 class _QueryService:
     def execute(self, request):
         return QueryDocumentsResponse(status="ok", generation_status="not_configured", lexical_candidate_count=1)
@@ -135,6 +141,26 @@ def test_index_endpoint_status_codes() -> None:
     response_success = _client().post("/api/documents/index", json={"rebuild": True})
     assert response_invalid.status_code == 400
     assert response_success.status_code == 200
+
+
+def test_index_endpoint_handles_internal_error() -> None:
+    app = FastAPI()
+    bundle = _Bundle(
+        config=_Config(),
+        status_service=_StatusService(),
+        add_source_service=_AddSourceService(),
+        index_documents_service=_ExplodingIndexService(),
+        lexical_index=_LexicalIndex(),
+        ovms_client=_Ovms(),
+        vector_index=_VectorIndex(),
+        query_documents_service=_QueryService(),
+        repository=_Repository(),
+        text_loader=_TextLoader(),
+    )
+    register_documents_routes(app, bundle=bundle)
+    response = TestClient(app).post("/api/documents/index", json={"rebuild": True})
+    assert response.status_code == 500
+    assert "Documents indexing failed" in response.json()["detail"]
 
 
 def test_health_endpoints() -> None:

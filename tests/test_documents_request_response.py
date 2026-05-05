@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from local_ai.slices.documents.request import (
@@ -8,7 +10,7 @@ from local_ai.slices.documents.request import (
     HealthRequest,
     QueryDocumentsRequest,
 )
-from local_ai.slices.documents.response import QueryDocumentsResponse
+from local_ai.slices.documents.response import IndexSourceResponse, QueryDocumentsResponse
 
 
 def test_query_request_defaults() -> None:
@@ -58,3 +60,14 @@ def test_query_response_serialization_shape() -> None:
     assert payload["status"] == "ok"
     assert payload["answer"] == "answer"
     assert payload["elapsed_ms"] == 12
+
+
+def test_index_response_serializes_datetime_fields() -> None:
+    response = IndexSourceResponse(
+        status="success",
+        started_at=datetime(2026, 5, 5, 7, 30, 0),
+        finished_at=datetime(2026, 5, 5, 7, 31, 0),
+    )
+    payload = response.to_dict()
+    assert payload["started_at"] == "2026-05-05T07:30:00"
+    assert payload["finished_at"] == "2026-05-05T07:31:00"
