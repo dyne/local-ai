@@ -212,7 +212,7 @@
 :Done when: A reviewer can reproduce console logs, searchable GUI logs, and ERROR notifications.
 :END:
 
-** TODO [#C] Update `AGENTS.md` with logging guidance
+** DONE [#C] Update `AGENTS.md` with logging guidance
 :PROPERTIES:
 :Why: Future slices need to publish logs consistently instead of adding direct prints or transcript-only error strings.
 :Change: Add a concise note explaining the log event contract, source naming, console adapter, GUI log panel, and when to use ERROR notifications.
