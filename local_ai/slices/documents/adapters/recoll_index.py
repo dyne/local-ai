@@ -119,12 +119,13 @@ class RecollLexicalSearchIndex:
             ]
         )
         for candidate in candidates:
-            backend = candidate / "examples" / "backends"
-            if backend.exists():
+            sample_backends = candidate / "backends"
+            install_backends = candidate / "examples" / "backends"
+            if sample_backends.is_file() or install_backends.exists():
                 return candidate, None
         return (
             None,
-            "Recoll installation data not found. Install Recoll with Share/examples/backends or set RECOLL_DATADIR.",
+            "Recoll installation data not found. Expected a directory with 'backends' (sampleconf) or 'examples/backends'. Set LOCAL_AI_DOCUMENTS_RECOLL_DATA_DIR or RECOLL_DATADIR.",
         )
 
     def _safe_remove_recoll_home(self) -> None:

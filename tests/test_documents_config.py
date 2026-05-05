@@ -14,11 +14,24 @@ def test_config_defaults_resolve_from_repo_root(tmp_path: Path) -> None:
     config_path.write_text('{"model_config_list": []}', encoding="utf-8")
     (repo_root / "llm" / "ovms" / "setupvars.ps1").write_text("echo ok", encoding="utf-8")
 
-    config = load_documents_config(repo_root=repo_root)
+    local_appdata = tmp_path / "localappdata"
+    local_appdata.mkdir(parents=True)
+    from os import environ
+    environ_backup = environ.get("LOCALAPPDATA")
+    environ["LOCALAPPDATA"] = str(local_appdata)
+    try:
+        config = load_documents_config(repo_root=repo_root)
+    finally:
+        if environ_backup is None:
+            del environ["LOCALAPPDATA"]
+        else:
+            environ["LOCALAPPDATA"] = environ_backup
 
-    assert config.app_data_dir == repo_root / ".local-ai" / "documents"
-    assert config.metadata_db_path == repo_root / ".local-ai" / "documents" / "metadata.sqlite3"
+    assert config.app_data_dir == local_appdata / "LocalAI" / "Data" / "documents"
+    assert config.metadata_db_path == local_appdata / "LocalAI" / "Data" / "documents" / "metadata.sqlite3"
+    assert config.recoll_home_dir == local_appdata / "LocalAI" / "Cache" / "documents" / "recoll"
     assert config.recoll_bin_dir == repo_root / "recoll"
+    assert config.recoll_data_dir == repo_root / "recoll" / "sampleconf"
     assert config.ovms_base_url == "http://127.0.0.1:8080"
 
 
