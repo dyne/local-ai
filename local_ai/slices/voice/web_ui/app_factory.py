@@ -19,6 +19,8 @@ def build_browser_app(
     events_handler: Callable[[str], Awaitable[object]],
     close_session_handler: Callable[[str], Awaitable[object]],
     app_roles_handler: Callable[[], Awaitable[object]] | None = None,
+    app_logs_handler: Callable[[Request], Awaitable[object]] | None = None,
+    app_log_events_handler: Callable[[], Awaitable[object]] | None = None,
     upload_transcription_handler: Callable[[Request], Awaitable[object]] | None = None,
     register_extra_routes: Callable[[FastAPI], None] | None = None,
     startup_hook: Callable[[], None] | None = None,
@@ -69,7 +71,12 @@ def build_browser_app(
         async def upload_transcription(request: Request) -> object:
             return await upload_transcription_handler(request)
 
-    register_app_shell_routes(app, app_roles_handler=app_roles_handler)
+    register_app_shell_routes(
+        app,
+        app_roles_handler=app_roles_handler,
+        app_logs_handler=app_logs_handler,
+        app_log_events_handler=app_log_events_handler,
+    )
     if register_extra_routes is not None:
         register_extra_routes(app)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import pathlib
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +28,8 @@ from local_ai.slices.voice.web_ui.session_decoder import decode_session_message
 from local_ai.slices.voice.web_ui.session_state import DEFAULT_AUDIO_BITRATE, SessionState, create_session_state
 from local_ai.slices.voice.web_ui.socket_loop import handle_audio_socket_connection
 from local_ai.slices.app_shell.role_catalog import role_catalog_response
+from local_ai.shared.domain.log_events import LogEvent, LogLevel, normalize_log_level
+from local_ai.shared.logging.log_bus import InMemoryLogBus
 from local_ai.slices.documents.service_bundle import build_documents_service_bundle
 from local_ai.slices.documents.adapters.ovms_lifecycle import OvmsProcessManager
 from local_ai.slices.documents.web import register_documents_routes
@@ -117,6 +120,7 @@ class AudioStreamService:
         logger: Any = None,
         likely_reason_details_fn: Any = None,
         to_thread_fn: Any = asyncio.to_thread,
+        log_bus: InMemoryLogBus | None = None,
     ) -> None:
         self.ctx = ctx
         self.index_html = index_html
@@ -124,6 +128,7 @@ class AudioStreamService:
         self.logger = logger or (lambda message, verbose, start_time: None)
         self.likely_reason_details_fn = likely_reason_details_fn or (lambda exc: ())
         self.to_thread_fn = to_thread_fn
+        self.log_bus = log_bus or InMemoryLogBus()
         self.sessions: dict[str, SessionState] = {}
 
     async def _debug(self, session: SessionState, message: str, limit: int = 12) -> None:
@@ -145,6 +150,42 @@ class AudioStreamService:
 
         async def app_roles() -> JSONResponse:
             return JSONResponse(role_catalog_response())
+
+        async def app_logs(request: Request) -> JSONResponse:
+            level_value = request.query_params.get("level")
+            try:
+                level = normalize_log_level(level_value) if level_value else None
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"reason": "Invalid level.", "details": ["Use one of: DEBUG, INFO, WARNING, ERROR."]},
+                ) from exc
+            source = request.query_params.get("source") or None
+            query = request.query_params.get("q") or None
+            try:
+                limit = int(request.query_params.get("limit", "200"))
+            except ValueError:
+                raise HTTPException(status_code=400, detail={"reason": "Invalid limit.", "details": ["Expected integer value."]})
+            limit = max(1, min(limit, 500))
+            events = [item.to_dict() for item in self.log_bus.recent(limit=limit, level=level, source=source, query=query)]
+            return JSONResponse({"events": events})
+
+        async def app_log_events() -> StreamingResponse:
+            async def stream() -> object:
+                queue = self.log_bus.subscribe()
+                try:
+                    while True:
+                        try:
+                            event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                            yield f"data: {json.dumps(event.to_dict())}\n\n"
+                        except asyncio.TimeoutError:
+                            yield "event: ping\ndata: keepalive\n\n"
+                except asyncio.CancelledError:
+                    return
+                finally:
+                    self.log_bus.unsubscribe(queue)
+
+            return StreamingResponse(stream(), media_type="text/event-stream")
 
         async def events(session_id: str) -> StreamingResponse:
             session = self.sessions.get(session_id)
@@ -191,6 +232,7 @@ class AudioStreamService:
                     to_thread_fn=self.to_thread_fn,
                 )
             except UploadedMediaError as exc:
+                self.publish_log_event(level=LogLevel.ERROR, source="voice.upload", message=exc.reason, details=exc.details, notification=True)
                 raise HTTPException(status_code=exc.status_code, detail={"reason": exc.reason, "details": exc.details}) from exc
 
             return JSONResponse(
@@ -211,6 +253,8 @@ class AudioStreamService:
             events_handler=events,
             close_session_handler=close_session,
             app_roles_handler=app_roles,
+            app_logs_handler=app_logs,
+            app_log_events_handler=app_log_events,
             upload_transcription_handler=upload_transcription,
             register_extra_routes=lambda app: register_documents_routes(app, bundle=documents_bundle),
             startup_hook=ovms_manager.startup,
@@ -321,3 +365,26 @@ class AudioStreamService:
 
     async def _cleanup_session(self, session: SessionState) -> None:
         await cleanup_session(session=session, sessions=self.sessions, target_sample_rate=TARGET_SAMPLE_RATE)
+
+    def publish_log_event(
+        self,
+        *,
+        level: LogLevel | str,
+        source: str,
+        message: str,
+        details: list[str] | tuple[str, ...] | None = None,
+        context: dict[str, str | int | float | bool | None] | None = None,
+        notification: bool | None = None,
+    ) -> None:
+        """Publish a structured log event to the in-memory app log bus."""
+
+        self.log_bus.publish(
+            LogEvent.create(
+                level=level,
+                source=source,
+                message=message,
+                details=details,
+                context=context,
+                notification=notification,
+            )
+        )
