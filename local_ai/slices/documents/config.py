@@ -57,7 +57,11 @@ def load_documents_config(repo_root: Path | None = None) -> DocumentsConfig:
     """Build DocumentsConfig from defaults and environment overrides."""
 
     root = repo_root if repo_root is not None else _repo_root()
-    app_data_dir = Path(_env("LOCAL_AI_DOCUMENTS_APP_DATA_DIR", str(root / ".local-ai" / "documents")))
+    local_appdata = Path(os.getenv("LOCALAPPDATA", str(root / ".local-ai")))
+    app_root = local_appdata / "LocalAI"
+    cache_dir = app_root / "Cache"
+    data_dir = app_root / "Data"
+    app_data_dir = Path(_env("LOCAL_AI_DOCUMENTS_APP_DATA_DIR", str(data_dir / "documents")))
     ovms_config_path = Path(_env("LOCAL_AI_DOCUMENTS_OVMS_CONFIG_PATH", str(root / "llm" / "models" / "config.json")))
     ovms_setupvars_path = Path(
         _env("LOCAL_AI_DOCUMENTS_OVMS_SETUPVARS_PATH", str(root / "llm" / "ovms" / "setupvars.ps1"))
@@ -65,14 +69,14 @@ def load_documents_config(repo_root: Path | None = None) -> DocumentsConfig:
     generation_model = os.getenv("LOCAL_AI_DOCUMENTS_GENERATION_MODEL")
     return DocumentsConfig(
         metadata_db_path=Path(
-            _env("LOCAL_AI_DOCUMENTS_METADATA_DB_PATH", str(app_data_dir / "metadata.sqlite3"))
+            _env("LOCAL_AI_DOCUMENTS_METADATA_DB_PATH", str(data_dir / "documents" / "metadata.sqlite3"))
         ),
         app_data_dir=app_data_dir,
         recoll_bin_dir=Path(_env("LOCAL_AI_DOCUMENTS_RECOLL_BIN_DIR", str(root / "recoll"))),
         recoll_home_dir=Path(
-            _env("LOCAL_AI_DOCUMENTS_RECOLL_HOME_DIR", str(app_data_dir / "recoll"))
+            _env("LOCAL_AI_DOCUMENTS_RECOLL_HOME_DIR", str(cache_dir / "documents" / "recoll"))
         ),
-        recoll_data_dir=Path(value).expanduser() if (value := os.getenv("LOCAL_AI_DOCUMENTS_RECOLL_DATA_DIR")) else None,
+        recoll_data_dir=Path(value).expanduser() if (value := os.getenv("LOCAL_AI_DOCUMENTS_RECOLL_DATA_DIR")) else (root / "recoll" / "sampleconf"),
         redis_url=_env("LOCAL_AI_DOCUMENTS_REDIS_URL", "redis://localhost:6379"),
         redis_index_name=_env("LOCAL_AI_DOCUMENTS_REDIS_INDEX_NAME", "local-ai-documents"),
         ovms_base_url=_env("LOCAL_AI_DOCUMENTS_OVMS_URL", "http://127.0.0.1:8080"),
