@@ -165,8 +165,28 @@ This is intentionally concrete. The repository is voice-first today, with archit
   - `GET /api/documents/health/ovms`
 - documents CLI shell:
   - `py -3.11 .\local-ai-documents.py add-source <path>`
-  - `py -3.11 .\local-ai-documents.py index [--rebuild]`
-  - `py -3.11 .\local-ai-documents.py query "<question>"`
+- `py -3.11 .\local-ai-documents.py index [--rebuild]`
+- `py -3.11 .\local-ai-documents.py query "<question>"`
+
+## Logging Guidance
+
+- Use the shared app log event contract in `local_ai/shared/domain/log_events.py` for app-level diagnostics.
+- Publish app-level logs through the in-memory bus (`local_ai/shared/logging/log_bus.py`) so events reach:
+  - console adapter output
+  - `GET /api/app/logs` history
+  - `GET /api/app/logs/events` live SSE stream
+- Keep transcript output user-focused:
+  - keep transcription content and upload results in the voice transcript
+  - keep operational errors/debug lines in app logs and notifications
+- Use canonical log sources from `local_ai/shared/logging/sources.py`:
+  - `app`
+  - `voice.live`
+  - `voice.upload`
+  - `voice.runtime`
+  - `documents.index`
+  - `documents.query`
+  - `ocr`
+- ERROR notifications are in-app toasts (frontend logs feature). Native OS notifications are intentionally deferred.
 
 ## Repository Map
 
