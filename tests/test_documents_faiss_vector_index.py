@@ -71,3 +71,39 @@ def test_missing_dependency_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(FaissUnavailableError):
         index.ensure_index(dimension=3, model_id="embed")
+
+
+def test_delete_stale_removes_old_passages(tmp_path: Path) -> None:
+    index = FaissVectorSearchIndex(
+        index_path=tmp_path / "vectors.faiss",
+        metadata_db_path=tmp_path / "vectors.sqlite3",
+    )
+    index.ensure_index(dimension=2, model_id="embed")
+    p1 = _passage("doc-1", "p1", text="hello")
+    p2 = _passage("doc-1", "p2", text="world")
+    index.upsert_passages((p1, p2), ((1.0, 0.0), (0.0, 1.0)))
+
+    import hashlib
+
+    current = {
+        "p1": hashlib.sha256("hello".encode("utf-8")).hexdigest(),
+    }
+    index.delete_stale(document_ids=("doc-1",), current_text_hashes=current)
+
+    results = index.search((0.0, 1.0), candidate_document_ids=("doc-1",), limit=5)
+    assert all(item.passage_id != "p2" for item in results)
+
+
+def test_upsert_replaces_existing_passage_vector(tmp_path: Path) -> None:
+    index = FaissVectorSearchIndex(
+        index_path=tmp_path / "vectors.faiss",
+        metadata_db_path=tmp_path / "vectors.sqlite3",
+    )
+    index.ensure_index(dimension=2, model_id="embed")
+    passage = _passage("doc-1", "p1", text="same")
+    index.upsert_passages((passage,), ((1.0, 0.0),))
+    index.upsert_passages((passage,), ((0.0, 1.0),))
+
+    results = index.search((0.0, 1.0), candidate_document_ids=("doc-1",), limit=1)
+    assert len(results) == 1
+    assert results[0].passage_id == "p1"
