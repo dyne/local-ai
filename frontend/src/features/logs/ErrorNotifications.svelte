@@ -1,6 +1,7 @@
 <script>
   export let notifications = [];
   export let onDismiss = () => {};
+  export let onOpenLog = () => {};
 </script>
 
 <div class="notifications" aria-live="polite" aria-atomic="false">
@@ -12,6 +13,7 @@
       </div>
       <p>{item.message}</p>
       <small>{item.timestamp} · {item.count}x</small>
+      <button type="button" on:click={() => onOpenLog(item)}>Open in Logs</button>
       <button type="button" on:click={() => onDismiss(item.key)}>Dismiss</button>
     </aside>
   {/each}
