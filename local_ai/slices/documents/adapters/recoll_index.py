@@ -100,7 +100,10 @@ class RecollLexicalSearchIndex:
             command,
             cwd=self._recoll_home_dir,
             extra_path_entries=(self._recoll_bin_dir,),
-            extra_env={"RECOLL_DATADIR": str(recoll_data_dir)},
+            extra_env={
+                "RECOLL_DATADIR": str(recoll_data_dir),
+                "RECOLL_CONFDIR": str(self._recoll_home_dir),
+            },
         )
 
     def _resolve_recoll_data_dir(self) -> tuple[Path | None, str | None]:

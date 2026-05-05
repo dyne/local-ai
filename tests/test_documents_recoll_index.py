@@ -13,9 +13,11 @@ class _FakeRunner:
     def __init__(self, result: CommandResult) -> None:
         self._result = result
         self.commands: list[list[str]] = []
+        self.calls: list[dict[str, object]] = []
 
     def run(self, command, **kwargs):  # type: ignore[no-untyped-def]
         self.commands.append(list(command))
+        self.calls.append(dict(kwargs))
         return self._result
 
 
@@ -166,3 +168,22 @@ def test_index_creates_examples_backends_shim_for_sampleconf(tmp_path: Path) -> 
     run = index.index(rebuild=False)
     assert run.status == "success"
     assert (sampleconf / "examples" / "backends").exists()
+
+
+def test_index_sets_recoll_env_vars(tmp_path: Path) -> None:
+    bin_dir = _prepare_recoll_bin_dir(tmp_path)
+    runner = _FakeRunner(CommandResult(returncode=0, stdout="", stderr="", elapsed_ms=8))
+    index = RecollLexicalSearchIndex(
+        recoll_bin_dir=bin_dir,
+        recoll_home_dir=tmp_path / "home",
+        app_data_dir=tmp_path / "app-data",
+        runner=runner,  # type: ignore[arg-type]
+    )
+    source = ArchiveSource(source_id="src-1", root_path=str((tmp_path / "archive").resolve()))
+    index.configure_sources((source,))
+    run = index.index(rebuild=False)
+    assert run.status == "success"
+    assert runner.calls
+    extra_env = runner.calls[-1].get("extra_env")
+    assert isinstance(extra_env, dict)
+    assert extra_env["RECOLL_CONFDIR"] == str((tmp_path / "home"))
