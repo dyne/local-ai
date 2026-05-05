@@ -334,6 +334,13 @@ class AudioStreamService:
                 prepare_stream_chunks_fn=prepare_stream_chunks,
                 process_prepared_chunks_fn=process_chunks,
                 cleanup_session_fn=self._cleanup_session,
+                publish_error_fn=lambda reason, details: self.publish_log_event(
+                    level=LogLevel.ERROR,
+                    source="voice.live",
+                    message=reason,
+                    details=details,
+                    notification=True,
+                ),
             )
 
         await handle_audio_socket_connection(
@@ -344,6 +351,13 @@ class AudioStreamService:
             debug_fn=self._debug,
             process_message_fn=process_message,
             websocket_disconnect_type=WebSocketDisconnect,
+            publish_error_fn=lambda reason, details: self.publish_log_event(
+                level=LogLevel.ERROR,
+                source="voice.runtime",
+                message=reason,
+                details=details,
+                notification=True,
+            ),
         )
 
     def _decode_audio_message(self, session: SessionState, message: dict[str, object]) -> tuple[np.ndarray, int] | None:

@@ -28,6 +28,7 @@ async def process_audio_message(
     prepare_stream_chunks_fn: Callable[..., object],
     process_prepared_chunks_fn: Callable[..., Awaitable[None] | object],
     cleanup_session_fn: Callable[[SessionState], Awaitable[None]],
+    publish_error_fn: Callable[[str, list[str] | None], None] | None = None,
 ) -> MessageProcessingResult:
     decoded = decode_audio_message_fn(session, message)
     if decoded is None:
@@ -59,6 +60,8 @@ async def process_audio_message(
     session.stream_sample_rate = prepared.stream_sample_rate
     if prepared.error is not None:
         await session.queue.put("[server error] Invalid chunk configuration.")
+        if publish_error_fn is not None:
+            publish_error_fn("Invalid chunk configuration.", [prepared.error])
         await cleanup_session_fn(session)
         return MessageProcessingResult(buffered_audio=prepared.buffered_audio, stop=True)
 
