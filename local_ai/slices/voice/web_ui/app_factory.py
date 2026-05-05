@@ -22,6 +22,7 @@ def build_browser_app(
     app_logs_handler: Callable[[Request], Awaitable[object]] | None = None,
     app_log_events_handler: Callable[[], Awaitable[object]] | None = None,
     upload_transcription_handler: Callable[[Request], Awaitable[object]] | None = None,
+    local_file_transcription_handler: Callable[[Request], Awaitable[object]] | None = None,
     register_extra_routes: Callable[[FastAPI], None] | None = None,
     startup_hook: Callable[[], None] | None = None,
     shutdown_hook: Callable[[], None] | None = None,
@@ -70,6 +71,11 @@ def build_browser_app(
         @app.post("/api/voice/transcriptions")
         async def upload_transcription(request: Request) -> object:
             return await upload_transcription_handler(request)
+
+    if local_file_transcription_handler is not None:
+        @app.post("/api/voice/transcriptions/local-file")
+        async def local_file_transcription(request: Request) -> object:
+            return await local_file_transcription_handler(request)
 
     register_app_shell_routes(
         app,

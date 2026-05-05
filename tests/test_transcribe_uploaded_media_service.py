@@ -7,9 +7,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from local_ai.slices.voice.transcribe_uploaded_media.request import TranscribeUploadedMediaRequest
+from local_ai.slices.voice.transcribe_uploaded_media.request import (
+    TranscribeLocalMediaRequest,
+    TranscribeUploadedMediaRequest,
+)
 from local_ai.slices.voice.transcribe_uploaded_media.service import (
     UploadedMediaError,
+    transcribe_local_media_path,
     transcribe_uploaded_media,
 )
 
@@ -195,3 +199,35 @@ def test_transcribe_uploaded_media_cleans_temp_file_on_decode_failure(
     assert created_paths
     for path in created_paths:
         assert not Path(path).exists()
+
+
+def test_transcribe_local_media_path_validates_path_requirements(tmp_path) -> None:
+    with pytest.raises(UploadedMediaError, match="Invalid source path"):
+        asyncio.run(
+            transcribe_local_media_path(
+                request=TranscribeLocalMediaRequest(source_path=Path("relative.wav"), silence_detect=True, vad_mode=3),
+                pipe=object(),
+                generate_kwargs={},
+                infer_lock=asyncio.Lock(),
+                logger=lambda *args: None,
+                start_time=0.0,
+                verbose=False,
+                likely_reason_details_fn=lambda exc: ["detail"],
+                to_thread_fn=asyncio.to_thread,
+            )
+        )
+
+    with pytest.raises(UploadedMediaError, match="Local file not found"):
+        asyncio.run(
+            transcribe_local_media_path(
+                request=TranscribeLocalMediaRequest(source_path=tmp_path / "missing.wav", silence_detect=True, vad_mode=3),
+                pipe=object(),
+                generate_kwargs={},
+                infer_lock=asyncio.Lock(),
+                logger=lambda *args: None,
+                start_time=0.0,
+                verbose=False,
+                likely_reason_details_fn=lambda exc: ["detail"],
+                to_thread_fn=asyncio.to_thread,
+            )
+        )

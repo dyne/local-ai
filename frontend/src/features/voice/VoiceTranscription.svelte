@@ -13,6 +13,7 @@
   import PushToTalkPanel from "./components/PushToTalkPanel.svelte";
   import TranscriptOutput from "./components/TranscriptOutput.svelte";
   import VoiceSettings from "./components/VoiceSettings.svelte";
+  import { isLikelyAbsolutePath, normalizeLocalMediaPath } from "./local-media-path";
   import { shouldDisplayTranscriptLine } from "./transcript-lines";
 
   const runtimeConfig = readRuntimeConfig(window);
@@ -32,6 +33,7 @@
   let uploadState = "idle";
   let uploadError = "";
   let uploadResults = [];
+  let localMediaPath = "";
 
   let stream = null;
   let eventSource = null;
@@ -170,17 +172,24 @@
     status = "idle";
   }
 
-  async function uploadFile(file) {
+  async function transcribeLocalPath() {
     uploadState = "uploading";
     uploadError = "";
+    const normalizedPath = normalizeLocalMediaPath(localMediaPath);
+    if (!isLikelyAbsolutePath(normalizedPath)) {
+      uploadState = "error";
+      uploadError = "Provide an absolute local file path.";
+      return;
+    }
     try {
-      const response = await fetch(`/api/voice/transcriptions?silence_detect=${silenceDetect ? "true" : "false"}&vad_mode=${encodeURIComponent(vadMode)}`, {
+      const response = await fetch(`/api/voice/transcriptions/local-file`, {
         method: "POST",
-        headers: {
-          "x-source-name": file.name,
-          "content-type": file.type || "application/octet-stream",
-        },
-        body: await file.arrayBuffer(),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          path: normalizedPath,
+          silence_detect: silenceDetect,
+          vad_mode: Number(vadMode),
+        }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -204,7 +213,7 @@
     } catch (error) {
       uploadState = "error";
       uploadError = String(error?.message || error);
-      uploadResults = [{ source_name: file.name, text: uploadError, status: "error" }, ...uploadResults].slice(0, 8);
+      uploadResults = [{ source_name: normalizedPath || "local-file", text: uploadError, status: "error" }, ...uploadResults].slice(0, 8);
     }
   }
 
@@ -216,7 +225,7 @@
 <section class="hero">
   <p class="eyebrow">Role</p>
   <h2>Voice Transcription</h2>
-  <p class="lede">Push-to-talk for live audio plus upload, drag/drop, and paste for media files.</p>
+  <p class="lede">Push-to-talk for live audio plus trusted local-file path transcription.</p>
 </section>
 
 <section class="controls">
@@ -228,7 +237,13 @@
     bind:toggleMode
     onToggleMode={(value) => (toggleMode = value)}
   />
-  <MediaUploadPanel {uploadState} {uploadError} onUploadFile={uploadFile} />
+  <MediaUploadPanel
+    {uploadState}
+    {uploadError}
+    localPath={localMediaPath}
+    onLocalPathChange={(value) => (localMediaPath = value)}
+    onTranscribePath={transcribeLocalPath}
+  />
   <VoiceSettings bind:saveSample bind:silenceDetect bind:echoCancellation bind:noiseSuppression bind:autoGainControl bind:clientDebug bind:vadMode bind:chunkSeconds bind:overlapSeconds />
 </section>
 
@@ -236,7 +251,7 @@
 
 {#if uploadResults.length > 0}
   <section class="history">
-    <h3>Recent Upload Results</h3>
+    <h3>Recent Local File Results</h3>
     <ul>
       {#each uploadResults as result}
         <li>
