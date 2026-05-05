@@ -31,6 +31,7 @@ from local_ai.slices.app_shell.role_catalog import role_catalog_response
 from local_ai.shared.domain.log_events import LogEvent, LogLevel, normalize_log_level
 from local_ai.shared.logging.legacy_bridge import make_legacy_logger_bridge
 from local_ai.shared.logging.log_bus import InMemoryLogBus
+from local_ai.shared.logging import sources
 from local_ai.slices.documents.service_bundle import build_documents_service_bundle
 from local_ai.slices.documents.adapters.ovms_lifecycle import OvmsProcessManager
 from local_ai.slices.documents.web import register_documents_routes
@@ -130,7 +131,11 @@ class AudioStreamService:
         self.likely_reason_details_fn = likely_reason_details_fn or (lambda exc: ())
         self.to_thread_fn = to_thread_fn
         self.log_bus = log_bus or InMemoryLogBus()
-        self.logger = make_legacy_logger_bridge(log_bus=self.log_bus, sink_logger=self._sink_logger, source="voice.runtime")
+        self.logger = make_legacy_logger_bridge(
+            log_bus=self.log_bus,
+            sink_logger=self._sink_logger,
+            source=sources.VOICE_RUNTIME,
+        )
         self.sessions: dict[str, SessionState] = {}
 
     async def _debug(self, session: SessionState, message: str, limit: int = 12) -> None:
@@ -234,7 +239,13 @@ class AudioStreamService:
                     to_thread_fn=self.to_thread_fn,
                 )
             except UploadedMediaError as exc:
-                self.publish_log_event(level=LogLevel.ERROR, source="voice.upload", message=exc.reason, details=exc.details, notification=True)
+                self.publish_log_event(
+                    level=LogLevel.ERROR,
+                    source=sources.VOICE_UPLOAD,
+                    message=exc.reason,
+                    details=exc.details,
+                    notification=True,
+                )
                 raise HTTPException(status_code=exc.status_code, detail={"reason": exc.reason, "details": exc.details}) from exc
 
             return JSONResponse(
@@ -340,7 +351,7 @@ class AudioStreamService:
                 cleanup_session_fn=self._cleanup_session,
                 publish_error_fn=lambda reason, details: self.publish_log_event(
                     level=LogLevel.ERROR,
-                    source="voice.live",
+                    source=sources.VOICE_LIVE,
                     message=reason,
                     details=details,
                     notification=True,
@@ -357,7 +368,7 @@ class AudioStreamService:
             websocket_disconnect_type=WebSocketDisconnect,
             publish_error_fn=lambda reason, details: self.publish_log_event(
                 level=LogLevel.ERROR,
-                source="voice.runtime",
+                source=sources.VOICE_RUNTIME,
                 message=reason,
                 details=details,
                 notification=True,
