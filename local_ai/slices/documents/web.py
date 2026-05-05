@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from local_ai.slices.documents.request import AddSourceRequest, IndexSourceRequest, QueryDocumentsRequest
+from local_ai.shared.logging import sources
 
 _LOG = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ def register_documents_routes(app: FastAPI, *, bundle: object, publish_log_event
             if publish_log_event is not None:
                 publish_log_event(
                     level="ERROR",
-                    source="documents.index",
+                    source=sources.DOCUMENTS_INDEX,
                     message="Documents source registration failed.",
                     details=[str(exc)],
                     notification=True,
@@ -63,14 +64,14 @@ def register_documents_routes(app: FastAPI, *, bundle: object, publish_log_event
             raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
         try:
             if publish_log_event is not None:
-                publish_log_event(level="INFO", source="documents.index", message="Documents indexing started.")
+                publish_log_event(level="INFO", source=sources.DOCUMENTS_INDEX, message="Documents indexing started.")
             response = bundle.index_documents_service.execute(parsed)  # type: ignore[attr-defined]
         except Exception as exc:
             _LOG.exception("Documents index failed.")
             if publish_log_event is not None:
                 publish_log_event(
                     level="ERROR",
-                    source="documents.index",
+                    source=sources.DOCUMENTS_INDEX,
                     message="Documents indexing failed.",
                     details=[str(exc)],
                     notification=True,
@@ -78,7 +79,7 @@ def register_documents_routes(app: FastAPI, *, bundle: object, publish_log_event
             raise HTTPException(status_code=500, detail="Documents indexing failed. Check Recoll logs and health endpoints.") from exc
         status_code = 200 if response.status in {"success", "ok"} else 400
         if publish_log_event is not None and status_code == 200:
-            publish_log_event(level="INFO", source="documents.index", message="Documents indexing completed.")
+            publish_log_event(level="INFO", source=sources.DOCUMENTS_INDEX, message="Documents indexing completed.")
         if status_code >= 400:
             _LOG.warning("Documents index returned non-success response: %s", response.to_dict())
         return JSONResponse(response.to_dict(), status_code=status_code)
@@ -99,7 +100,7 @@ def register_documents_routes(app: FastAPI, *, bundle: object, publish_log_event
             if publish_log_event is not None:
                 publish_log_event(
                     level="ERROR",
-                    source="documents.query",
+                    source=sources.DOCUMENTS_QUERY,
                     message="Documents query failed.",
                     details=[str(exc)],
                     notification=True,
