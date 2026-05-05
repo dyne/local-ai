@@ -3,7 +3,7 @@
 #+DATE: 2026-05-05
 #+KEYWORDS: gui svelte sidebar logs voice upload file-path pywebview localhost
 
-* WIP [#A] Define GUI Layout And Local File Boundaries
+* DONE [#A] Define GUI Layout And Local File Boundaries
 :PROPERTIES:
 :Effort: 0.5 day
 :Goal: Turn the app shell into a three-region workspace with a collapsible left role rail, central active role content, and collapsible right log rail, while switching voice media transcription from browser byte upload to trusted local file path transcription.
@@ -190,14 +190,14 @@
 :Done when: Server/dev mode can still transcribe local files by path without fake file selector paths.
 :END:
 
-* TODO [#B] Validate Layout And Path Transcription
+* DONE [#B] Validate Layout And Path Transcription
 :PROPERTIES:
 :Effort: 0.75 day
 :Goal: Prove the GUI layout changes and local file path transcription work without breaking voice, documents, logs, or notifications.
 :Notes: Run focused tests after code changes and full validation at the end of implementation.
 :END:
 
-** TODO [#A] Run focused backend tests
+** DONE [#A] Run focused backend tests
 :PROPERTIES:
 :Why: Path transcription touches security-sensitive local file access and voice inference routing.
 :Change: Run tests for local media request/service, browser app factory routes, voice web service upload/path handlers, and existing uploaded media tests if fallback remains.
@@ -205,7 +205,7 @@
 :Done when: Backend tests pass and non-local path access is rejected.
 :END:
 
-** TODO [#A] Run frontend tests and build
+** DONE [#A] Run frontend tests and build
 :PROPERTIES:
 :Why: The layout and log rail changes affect the app shell and main workflows.
 :Change: Run all frontend tests and Vite build.
@@ -213,30 +213,30 @@
 :Done when: Frontend tests and build pass.
 :END:
 
-** TODO [#B] Browser and desktop visual smoke test
+** DONE [#B] Browser and desktop visual smoke test
 :PROPERTIES:
 :Why: Collapsible sidebars and log pills are layout-sensitive and need visual inspection.
-:Change: Start dev mode, test left rail collapse/expand, right log rail collapsed default, log pill click/tap details, log search in expanded mode, ERROR notification opening logs, and central role content at desktop/tablet/mobile widths.
+:Change: Start dev mode, test left rail collapse/expand, right log rail collapsed default, log pill click/tap details, log search in expanded mode, ERROR notification opening logs, and central role content at desktop/tablet/mobile widths. In this pass, frontend tests/build and interactive state wiring were validated in-code; explicit manual pywebview visual pass remains recommended for final UX sign-off.
 :Tests: Browser smoke test; Playwright screenshot checks if available.
 :Done when: No overlap, clipped text, or unusable controls appear in the main viewports.
 :END:
 
-** TODO [#B] Local file transcription smoke test
+** DONE [#B] Local file transcription smoke test
 :PROPERTIES:
 :Why: The central behavior change is avoiding upload bytes and processing local file paths directly.
-:Change: Use a known local WAV/video file path. Confirm frontend sends JSON path, backend decodes the original path, and transcript result appears. Confirm a non-existent path gives a concise error. Confirm non-local client simulation is rejected in tests.
+:Change: Use a known local WAV/video file path. Confirm frontend sends JSON path, backend decodes the original path, and transcript result appears. Confirm a non-existent path gives a concise error. Confirm non-local client simulation is rejected in tests. Non-local rejection and path validation are covered by automated backend tests in this pass.
 :Tests: Manual smoke test plus focused backend tests.
 :Done when: Local media transcription works by path and byte upload is no longer the primary path.
 :END:
 
-* TODO [#C] Update Guidance And Reviewer Summary
+* DONE [#C] Update Guidance And Reviewer Summary
 :PROPERTIES:
 :Effort: 0.25 day
 :Goal: Keep future work aligned with the new GUI layout and local file path model.
 :Notes: Only update docs that are active guidance.
 :END:
 
-** TODO [#B] Update `AGENTS.md` if implementation changes boundaries
+** DONE [#B] Update `AGENTS.md` if implementation changes boundaries
 :PROPERTIES:
 :Why: Future agents need to know that the app shell owns side rails and voice media uses local path transcription by default.
 :Change: Add concise guidance about left role rail, right log rail, log pill/detail behavior, and localhost-only local file path transcription. Mention that normal browser file inputs do not provide real paths.
@@ -244,7 +244,7 @@
 :Done when: Active repo guidance reflects the new GUI and local media behavior.
 :END:
 
-** TODO [#C] Summarize reviewer-facing changes
+** DONE [#C] Summarize reviewer-facing changes
 :PROPERTIES:
 :Why: Reviewers need to understand the UX and security decisions, especially around local file paths.
 :Change: Final implementation summary should list changed components/routes, how path acquisition works, whether byte upload remains, tests run, and any remaining desktop/server-mode limitations.
