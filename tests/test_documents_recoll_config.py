@@ -15,8 +15,8 @@ def test_write_recoll_config_with_sources(tmp_path: Path) -> None:
 
     text = config_path.read_text(encoding="utf-8")
     assert "topdirs =" in text
-    assert str((tmp_path / "a").resolve()) in text
-    assert str((tmp_path / "b").resolve()) in text
+    assert (tmp_path / "a").resolve().as_posix() in text
+    assert (tmp_path / "b").resolve().as_posix() in text
     assert "skippedNames" in text
 
 

@@ -28,6 +28,7 @@ def _prepare_recoll_bin_dir(tmp_path: Path) -> Path:
     (bin_dir / "recollq.exe").write_text("", encoding="utf-8")
     (bin_dir / "Share" / "examples").mkdir(parents=True)
     (bin_dir / "Share" / "examples" / "backends").write_text("", encoding="utf-8")
+    (bin_dir / "Share" / "recoll.conf").write_text("mimemap = mimemap\n", encoding="utf-8")
     return bin_dir
 
 
@@ -94,6 +95,24 @@ def test_rebuild_path_safety_rejects_external_path(tmp_path: Path) -> None:
     (tmp_path / "outside").mkdir(parents=True)
     with pytest.raises(RecollAdapterError):
         index.index(rebuild=True)
+
+
+def test_rebuild_path_safety_allows_localai_cache_path(tmp_path: Path) -> None:
+    bin_dir = _prepare_recoll_bin_dir(tmp_path)
+    runner = _FakeRunner(CommandResult(returncode=0, stdout="", stderr="", elapsed_ms=8))
+    app_data_dir = tmp_path / "LocalAI" / "Data" / "documents"
+    recoll_home = tmp_path / "LocalAI" / "Cache" / "documents" / "recoll"
+    recoll_home.mkdir(parents=True, exist_ok=True)
+    index = RecollLexicalSearchIndex(
+        recoll_bin_dir=bin_dir,
+        recoll_home_dir=recoll_home,
+        app_data_dir=app_data_dir,
+        runner=runner,  # type: ignore[arg-type]
+    )
+    source = ArchiveSource(source_id="src-1", root_path=str((tmp_path / "archive").resolve()))
+    index.configure_sources((source,))
+    run = index.index(rebuild=True)
+    assert run.status == "success"
 
 
 def test_health_reports_binary_paths(tmp_path: Path) -> None:
@@ -187,3 +206,20 @@ def test_index_sets_recoll_env_vars(tmp_path: Path) -> None:
     extra_env = runner.calls[-1].get("extra_env")
     assert isinstance(extra_env, dict)
     assert extra_env["RECOLL_CONFDIR"] == str((tmp_path / "home"))
+    assert "__datadir" in str(extra_env["RECOLL_DATADIR"])
+
+
+def test_configure_sources_writes_localai_conf(tmp_path: Path) -> None:
+    bin_dir = _prepare_recoll_bin_dir(tmp_path)
+    runner = _FakeRunner(CommandResult(returncode=0, stdout="", stderr="", elapsed_ms=8))
+    index = RecollLexicalSearchIndex(
+        recoll_bin_dir=bin_dir,
+        recoll_home_dir=tmp_path / "home",
+        app_data_dir=tmp_path / "app-data",
+        runner=runner,  # type: ignore[arg-type]
+    )
+    source = ArchiveSource(source_id="src-1", root_path=str((tmp_path / "archive").resolve()))
+    index.configure_sources((source,))
+    conf = (tmp_path / "home" / "recoll.conf").read_text(encoding="utf-8")
+    assert "# LocalAI overrides" in conf
+    assert "topdirs =" in conf
