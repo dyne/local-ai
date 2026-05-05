@@ -1,0 +1,299 @@
+#+TITLE: FAISS Vector Search
+#+SUBTITLE: Replace Redis vector search with local FAISS-backed document vector indexing
+#+DATE: 2026-05-05
+#+KEYWORDS: documents rag faiss vector-search redis-removal local-index recoll ovms
+
+* DONE [#A] Establish FAISS Migration Scope
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Replace every Redis-backed vector search path with FAISS while preserving the existing Documents architecture: Recoll lexical retrieval, OVMS embeddings, candidate-scoped semantic refinement, and SQLite metadata.
+:Notes: The user explicitly said the software is unreleased and unused, so do not preserve Redis compatibility. Delete Redis code, tests, config, routes, labels, and docs directly. Add FAISS as the only vector search engine behind the existing `VectorSearchIndex` port.
+:END:
+
+** DONE [#A] Inventory current Redis vector search usage
+:PROPERTIES:
+:Why: Redis should be removed from vector search completely, including adapter construction, config fields, health endpoints, docs, tests, and UI labels.
+:Change: Search for `redis`, `Redis`, `redis_url`, `redis_index_name`, `VectorSearchIndex`, and `health/redis`. Confirm current vector functionality is isolated mainly in `local_ai/slices/documents/adapters/redis_vector_index.py`, `local_ai/slices/documents/config.py`, `local_ai/slices/documents/service_bundle.py`, `local_ai/slices/documents/status/service.py`, Documents routes, tests, and AGENTS/plans. Delete active Redis usage outright as part of this plan.
+:Tests: No tests unless files are changed.
+:Done when: The implementer has a concrete delete/replace list and can state whether Redis appears anywhere outside Documents vector search.
+:END:
+
+** DONE [#A] Validate FAISS runtime packaging choice
+:PROPERTIES:
+:Why: FAISS is a native library. The project is Windows/Python 3.11 oriented, and choosing the wrong install path can break local development or frozen builds.
+:Change: Verify the installable package for this repo environment. Prefer the smallest CPU-only FAISS package that imports as `faiss` under Python 3.11. The official FAISS documentation recommends Conda packages `faiss-cpu` / `faiss-gpu`; if this repo cannot rely on Conda, test whether a PyPI `faiss-cpu` wheel works on Windows. Record the chosen package and fallback diagnostic. Do not add GPU FAISS unless explicitly requested.
+:Tests: Add an optional import/availability test skipped when FAISS is not installed, plus a clear unit test for the adapter's missing-dependency error.
+:Done when: The plan implementer knows exactly which dependency to add and how failures will be reported.
+:END:
+
+** DONE [#A] Keep the existing retrieval architecture intact
+:PROPERTIES:
+:Why: The requested change is vector-search storage/search, not a replacement for Recoll lexical retrieval or OVMS embeddings.
+:Change: Preserve the service flow in `RefineCandidatesService`: load candidate text from Recoll results, split passages, embed passages/query through OVMS, ensure vector index, upsert passages, and search only within current Recoll candidate document ids. Only the vector adapter and related config/health names should change.
+:Tests: Existing query/refinement service tests should continue passing with fake vector indexes.
+:Done when: Service boundaries still depend on `VectorSearchIndex`, not directly on FAISS.
+:END:
+
+* WIP [#A] Design The FAISS Storage Model
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Define a local, persistent FAISS index plus metadata sidecar that supports candidate-scoped passage search.
+:Notes: FAISS stores vectors and numeric ids efficiently, but passage metadata must live outside the FAISS index. Keep metadata simple and local.
+:END:
+
+** DONE [#A] Choose initial FAISS index type and distance metric
+:PROPERTIES:
+:Why: The current Redis fallback computes cosine similarity. FAISS supports L2 and maximum inner product search; cosine can be implemented by normalizing vectors and using inner product.
+:Change: Use `faiss.IndexIDMap2(faiss.IndexFlatIP(dimension))` for the first implementation. Normalize all passage and query vectors to unit length before adding/searching so inner product equals cosine similarity. Keep IVF/HNSW/PQ out of the first implementation because candidate-scoped passage sets are likely modest and exact search is simpler and deterministic.
+:Tests: Add adapter tests showing normalized inner product ranking matches expected cosine ranking and zero vectors are handled without crashes.
+:Done when: Index type, metric, and normalization behavior are explicit and test-covered.
+:END:
+
+** DONE [#A] Define vector id and metadata sidecar format
+:PROPERTIES:
+:Why: FAISS ids are numeric, while the domain uses string `passage_id`, `document_id`, source paths, and passage text. The adapter needs a durable mapping.
+:Change: Store FAISS vectors in a `.faiss` file and metadata in a SQLite sidecar or JSONL sidecar under `config.app_data_dir / "faiss"`. Prefer SQLite if it avoids loading all metadata at startup and matches existing standard-library persistence. Metadata fields: `vector_id INTEGER PRIMARY KEY`, `passage_id`, `document_id`, `source_path`, `text`, `start_offset`, `end_offset`, `text_hash`, `embedding_model`, `dimension`, and `updated_at`. Generate stable numeric ids from a deterministic hash of `passage_id`, resolving collisions by probing or by keeping an id registry table.
+:Tests: Add tests for stable id generation, collision handling if implemented, metadata round trip, and sidecar reopen.
+:Done when: The adapter can rebuild domain `EvidencePassage` rows from FAISS search ids without Redis fields.
+:END:
+
+** DONE [#A] Decide persistence and rebuild semantics
+:PROPERTIES:
+:Why: Redis kept vector state externally. FAISS is local file state, so the app must know when to create, load, reset, and save the index.
+:Change: Add config paths such as `faiss_index_path`, `faiss_metadata_db_path`, and optional `faiss_autosave`. On `ensure_index(dimension, model_id)`, load existing index/metadata if compatible with FAISS; if dimension or embedding model changed, reset both index and metadata. Save after successful upserts. Keep atomic writes for the `.faiss` file: write to temporary file, then replace.
+:Tests: Add tests for first creation, FAISS-compatible reload, dimension mismatch reset, model mismatch reset, and atomic save path behavior.
+:Done when: The FAISS index survives process restarts and resets predictably when embeddings are incompatible.
+:END:
+
+** TODO [#B] Define stale vector deletion strategy
+:PROPERTIES:
+:Why: Recoll candidates can change when files are edited. A FAISS flat index cannot cheaply delete arbitrary ids unless using id maps with removal support, and metadata can become stale.
+:Change: Implement `delete_stale(document_ids, current_text_hashes)` if the current port already expects it; otherwise add the smallest explicit cleanup method needed. Prefer rebuilding the FAISS index from sidecar metadata after deleting stale rows from SQLite. For the first pass, stale cleanup can happen per candidate document set before upsert/search.
+:Tests: Add tests where old passages for a document are removed and no longer appear in search results after reload.
+:Done when: Edited/deleted passages do not remain searchable indefinitely.
+:END:
+
+* DONE [#A] Implement FAISS Vector Adapter Behind The Existing Port
+:PROPERTIES:
+:Effort: 1.5 days
+:Goal: Add a concrete FAISS implementation of `VectorSearchIndex` and make it the only vector search adapter used by Documents.
+:Notes: Keep imports lazy or isolated so a missing FAISS native library yields a clear health error instead of breaking all app imports.
+:END:
+
+** DONE [#A] Add `FaissVectorSearchIndex` adapter
+:PROPERTIES:
+:Why: The existing `RedisVectorSearchIndex` should be replaced by a FAISS adapter that satisfies the same port.
+:Change: Add `local_ai/slices/documents/adapters/faiss_vector_index.py`. Implement `ensure_index`, `upsert_passages`, `search`, `health`, and cleanup/rebuild helpers. Import `faiss` inside the adapter. Validate vector counts and dimensions. Convert vectors to contiguous `float32` NumPy arrays. Normalize vectors before add/search. Use `IndexIDMap2` with explicit ids.
+:Tests: Add `tests/test_documents_faiss_vector_index.py` with fake or real FAISS depending on availability. Cover ensure, upsert, search ranking, candidate document filtering, limit, no candidates, dimension mismatch, model mismatch, metadata reopen, and health response.
+:Done when: FAISS adapter passes focused tests and default service code can construct it.
+:END:
+
+** DONE [#A] Preserve candidate-scoped filtering
+:PROPERTIES:
+:Why: FAISS can search the whole local vector index, but the app architecture requires semantic refinement only over current Recoll candidates. This prevents stale/unrelated semantic results from bypassing lexical retrieval.
+:Change: Implement candidate filtering inside the adapter. Prefer using FAISS id selectors if practical for the chosen index; otherwise search with an oversampling factor and post-filter by `document_id` from metadata. If post-filtering is used, loop with increasing `k` up to a bounded cap so small candidate sets still get enough results.
+:Tests: Add tests with high-scoring passages outside `candidate_document_ids` and assert they are excluded. Add tests where oversampling is needed to return lower-ranked in-candidate passages.
+:Done when: `search(query_vector, candidate_document_ids=..., limit=...)` never returns passages outside the supplied candidate document ids.
+:END:
+
+** DONE [#B] Add robust health and diagnostics
+:PROPERTIES:
+:Why: Users need to see that vector search is local FAISS, where files live, and why it is unavailable.
+:Change: `health()` should return fields like `status`, `engine="faiss"`, `index_path`, `metadata_path`, `embedding_model`, `vector_dimension`, `stored_passages`, `faiss_available`, and `error` if import/load fails. Avoid Redis naming entirely.
+:Tests: Add tests for healthy index, missing dependency, incompatible index file, and empty index.
+:Done when: Documents status can report FAISS readiness without mentioning Redis.
+:END:
+
+** DONE [#B] Handle concurrency around index mutation
+:PROPERTIES:
+:Why: Query/upload/index operations can overlap in the server. FAISS index mutation and save should not race with search.
+:Change: Add a simple `threading.RLock` inside the adapter. Lock `ensure_index`, `upsert_passages`, cleanup, save, load, and search. Keep locking adapter-local and avoid cross-service global state.
+:Tests: Add a small concurrency test if practical, or at minimum assert repeated search/upsert sequences do not corrupt metadata.
+:Done when: Adapter state is protected from simultaneous mutation/search in the local server.
+:END:
+
+* DONE [#A] Remove Redis Configuration, Adapter Wiring, And Health Routes
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Make FAISS the only vector search implementation reachable from production code.
+:Notes: Do not leave Redis as an optional vector search backend unless the user explicitly asks for pluggable backends. The request says substitute Redis with FAISS.
+:END:
+
+** DONE [#A] Replace service bundle wiring
+:PROPERTIES:
+:Why: Production code currently builds `RedisVectorSearchIndex`.
+:Change: Update `local_ai/slices/documents/service_bundle.py` to construct `FaissVectorSearchIndex` with FAISS paths from config. Remove import of `RedisVectorSearchIndex`. Update the `DocumentsServiceBundle.vector_index` type annotation to the port or the FAISS adapter.
+:Tests: Update `tests/test_documents_service_bundle.py` to assert FAISS adapter wiring and no Redis adapter import is needed.
+:Done when: Default Documents service construction uses FAISS and does not instantiate Redis.
+:END:
+
+** DONE [#A] Replace documents config fields and environment variables
+:PROPERTIES:
+:Why: Redis URL/index settings should disappear from runtime configuration once FAISS is the vector engine.
+:Change: In `local_ai/slices/documents/config.py`, delete `redis_url` and `redis_index_name`. Add `faiss_index_path`, `faiss_metadata_db_path`, and possibly `faiss_runtime_dir`. Environment overrides should use `LOCAL_AI_DOCUMENTS_FAISS_INDEX_PATH` and `LOCAL_AI_DOCUMENTS_FAISS_METADATA_DB_PATH`. Default under local app data, for example `Data/documents/vector_index.faiss` and `Data/documents/vector_metadata.sqlite3`.
+:Tests: Update `tests/test_documents_config.py` for new defaults and env overrides. Add regression assertion that Redis env vars are not required.
+:Done when: Documents config no longer exposes Redis as the vector-search backend.
+:END:
+
+** DONE [#A] Update status and web routes
+:PROPERTIES:
+:Why: UI/API should not offer `GET /api/documents/health/redis` or Redis labels after migration.
+:Change: Delete Redis health routes/fields. Add FAISS health, for example `GET /api/documents/health/faiss`, and update status response health keys to `faiss` or `vector` with `engine="faiss"`. Keep frontend display generic as "Vector index" with engine `FAISS` to avoid future label churn.
+:Tests: Update web/status route tests for FAISS health. Search for old route strings and remove them.
+:Done when: Public API and UI no longer present Redis as a dependency.
+:END:
+
+** DONE [#B] Remove Redis adapter and tests
+:PROPERTIES:
+:Why: Keeping dead Redis code makes the migration ambiguous and violates "all vector search functionality should somehow be done using FAISS".
+:Change: Delete `local_ai/slices/documents/adapters/redis_vector_index.py` in the same implementation pass that adds the FAISS adapter. Delete `tests/test_documents_redis_vector_index.py` or replace it with FAISS tests. Remove Redis dependency declarations if any exist in `GNUmakefile`, workflows, requirements, docs, or packaging files.
+:Tests: Run `rg "redis|Redis"` and justify any remaining occurrences as historical plan text only or remove them from active docs.
+:Done when: Active source and tests have no Redis vector-search implementation.
+:END:
+
+* WIP [#A] Update Query And Indexing Behavior For FAISS
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Ensure document query/index workflows use FAISS correctly and efficiently for all semantic vector search.
+:Notes: Keep candidate-scoped semantic refinement. Do not introduce full-corpus embedding during Recoll indexing unless a later performance pass demands it.
+:END:
+
+** DONE [#A] Keep on-demand candidate passage upsert path working
+:PROPERTIES:
+:Why: The existing flow embeds and upserts only passages from current lexical candidates. FAISS must support that same minimal path before optimizing.
+:Change: Verify `RefineCandidatesService` works unchanged with FAISS. If stale deletion is added, call it before `upsert_passages` for current candidate document ids. Ensure evidence citation numbering stays stable after filtering.
+:Tests: Update `tests/test_documents_refine_candidates_service.py` to use a fake FAISS-like vector index and assert ensure/upsert/search calls are unchanged.
+:Done when: Query refinement behavior remains functionally equivalent except for FAISS-backed storage.
+:END:
+
+** DONE [#B] Avoid duplicate vectors for repeated queries
+:PROPERTIES:
+:Why: On-demand upsert can add the same passages repeatedly. Redis field upsert hid this naturally by key. FAISS needs explicit replacement or metadata dedupe.
+:Change: Before adding vectors, delete or replace existing rows for the same `passage_id` and remove/rebuild affected FAISS ids. Keep metadata unique on `passage_id`. Rebuild the FAISS index from metadata when replacement is needed.
+:Tests: Add adapter test where the same passage is upserted twice with a changed vector and search uses the latest vector only.
+:Done when: Repeated queries do not accumulate duplicate passage vectors.
+:END:
+
+** TODO [#B] Consider pre-indexing semantic vectors later
+:PROPERTIES:
+:Why: FAISS can handle larger local indexes, but full archive vectorization changes indexing cost and model runtime expectations.
+:Change: Do not implement full-corpus semantic indexing in this migration. Add a follow-up note only: once FAISS is stable, a future plan may embed all indexed passages during document indexing and use Recoll only as a filter or hybrid retrieval stage.
+:Tests: No tests needed.
+:Done when: Migration stays scoped to replacing Redis, not redesigning retrieval.
+:END:
+
+* DONE [#A] Dependencies, Packaging, And Local Data Migration
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Make FAISS available in development and packaged builds, and discard any Redis vector state without migration.
+:Notes: Redis vector data is irrelevant for this unreleased app. Do not build export/import compatibility. FAISS starts empty and vectors are regenerated locally from Recoll candidates and OVMS.
+:END:
+
+** DONE [#A] Add FAISS dependency consistently
+:PROPERTIES:
+:Why: Native dependencies must be present in dev, CI, and packaging.
+:Change: Add the chosen FAISS package to the repo dependency declaration points. If `GNUmakefile` is the only Python dependency source, add it there. If PyInstaller needs hidden imports or binary collection for FAISS/NumPy, update `local-ai-voice.spec`, `GNUmakefile`, and `.github/workflows/build-and-release.yaml` consistently. Keep Redis dependency out if it exists solely for vector search.
+:Tests: Update packaging tests to assert FAISS dependency/hidden imports are present and Redis is absent from active dependency declarations.
+:Done when: A clean install can import `faiss` and packaging config includes necessary native files.
+:END:
+
+** DONE [#A] Delete Redis state assumptions and rebuild FAISS on demand
+:PROPERTIES:
+:Why: There is no released user data to preserve, and document vectors can be regenerated from source documents and OVMS embeddings.
+:Change: On first FAISS use, start with an empty local index and rebuild vectors as queries run. Do not connect to Redis, inspect Redis, export Redis, or mention Redis migration in runtime UX.
+:Tests: Add status/adapter tests for empty FAISS index reporting `stored_passages=0` and ready status when FAISS is importable.
+:Done when: The app never expects Redis state and FAISS rebuilds local vectors as needed.
+:END:
+
+** DONE [#B] Clean up old local Redis references in docs and AGENTS
+:PROPERTIES:
+:Why: Instructions currently tell future agents that semantic refinement uses Redis. That will be wrong and cause regressions.
+:Change: Update `AGENTS.md`, `README.md`, `ARCHITECTURE.md`, and active plan/status docs to say semantic vector search uses FAISS. Remove Redis setup steps and Redis health endpoint references. Historical `.gestalt/plans/documents-rag.org` may keep old context, but active instructions must not tell agents or users to use Redis.
+:Tests: No tests needed for docs-only changes.
+:Done when: Active documentation says FAISS is the vector search engine.
+:END:
+
+* DONE [#A] Frontend And API Label Migration
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Make the GUI and API status present FAISS/vector-search state clearly.
+:Notes: The frontend should not need to know FAISS internals beyond status and diagnostics.
+:END:
+
+** DONE [#A] Replace Redis UI labels with vector-index/FAISS labels
+:PROPERTIES:
+:Why: The Documents GUI should not tell users to start Redis after FAISS migration.
+:Change: Search frontend for Redis labels, health cards, setup hints, and error messages. Replace with "Vector index", engine "FAISS", local index path, stored passage count, and concise diagnostics from backend health.
+:Tests: Run frontend tests and add/update helper tests if health payload parsing changes.
+:Done when: The GUI reflects FAISS vector search and no active Redis user instruction remains.
+:END:
+
+** DONE [#B] Delete Redis API compatibility
+:PROPERTIES:
+:Why: The app is unreleased, so compatibility with Redis-named routes or response fields has no value and would confuse future implementation.
+:Change: Remove Redis-named routes, response fields, frontend parsing branches, and tests. Prefer generic `vector` health keys or explicit `faiss` keys. Do not return 410 aliases and do not map old Redis routes to FAISS.
+:Tests: Update route and frontend tests to use only FAISS/vector names.
+:Done when: API semantics are clear and no active code supports Redis compatibility.
+:END:
+
+* WIP [#A] Validate FAISS Migration
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Prove all vector search functionality uses FAISS and existing document retrieval still works.
+:Notes: Run focused tests after each implementation L2 and full validation at the end, following repo workflow.
+:END:
+
+** DONE [#A] Run focused backend tests
+:PROPERTIES:
+:Why: The vector adapter is central to document query quality and persistence.
+:Change: Run focused tests for FAISS adapter, documents config, service bundle, refine candidates, query archive, status, and web routes.
+:Tests: `py -3.11 -m pytest tests/test_documents_faiss_vector_index.py tests/test_documents_config.py tests/test_documents_service_bundle.py tests/test_documents_refine_candidates_service.py tests/test_documents_query_service.py tests/test_documents_status_service.py tests/test_documents_web.py`
+:Done when: Focused backend tests pass.
+:END:
+
+** DONE [#A] Run Redis removal checks
+:PROPERTIES:
+:Why: The user requested all vector search functionality use FAISS, so lingering Redis code is a correctness issue.
+:Change: Run `rg "redis|Redis" local_ai tests frontend GNUmakefile local-ai-voice.spec .github AGENTS.md README.md ARCHITECTURE.md`. Remove or justify every active occurrence. Historical plan files may retain Redis if clearly superseded.
+:Tests: Add a test if useful that active service bundle imports FAISS and not Redis.
+:Done when: Active source/tests/docs contain no Redis vector-search implementation or user-facing Redis instructions.
+:END:
+
+** TODO [#B] Run integration smoke test with small documents
+:PROPERTIES:
+:Why: FAISS persistence and candidate filtering need an end-to-end check beyond unit tests.
+:Change: Create a tiny temporary document source with two or three text files, index with Recoll, query through Documents API/service, and confirm returned evidence comes from FAISS-ranked candidate passages. Skip or document if local Recoll/OVMS are unavailable.
+:Tests: Manual or optional integration test guarded by environment flags such as `LOCAL_AI_DOCUMENTS_INTEGRATION=1`.
+:Done when: A real query can produce evidence using FAISS vector search when local dependencies are available.
+:END:
+
+** DONE [#B] Run project validation
+:PROPERTIES:
+:Why: Dependency and packaging changes can break unrelated startup paths.
+:Change: Run the documented minimum validation plus packaging-specific tests after all FAISS changes.
+:Tests: `py -3.11 -m pytest`; `py -3.11 -m py_compile local-ai-voice.py local_ai_voice.py voice_runtime.py browser_webrtc.py`; `cd frontend && npm test`; `cd frontend && npm run build`; `py -3.11 -m pytest tests/test_packaging_spec.py`.
+:Done when: Routine validation passes or any environment-only blocker is documented.
+:END:
+
+* TODO [#C] Reviewer Summary And Follow-Up Boundaries
+:PROPERTIES:
+:Effort: 0.25 day
+:Goal: Make the FAISS migration easy to review and prevent scope creep into unrelated RAG redesign.
+:Notes: Keep the final summary concise and explicit about what changed.
+:END:
+
+** TODO [#B] Summarize architecture changes for reviewers
+:PROPERTIES:
+:Why: Reviewers need to know this is a vector backend replacement, not a Recoll/OVMS/query rewrite.
+:Change: In the final implementation summary, list removed Redis files/config/routes, added FAISS adapter/files/config, dependency/packaging changes, and validation commands. State that Redis was deleted intentionally and FAISS rebuilds local vectors from documents as needed.
+:Tests: No tests needed.
+:Done when: Reviewer summary explains the migration and residual limitations.
+:END:
+
+** TODO [#C] Capture future FAISS optimization candidates
+:PROPERTIES:
+:Why: FAISS supports advanced indexes, but the first migration should be exact and maintainable.
+:Change: List optional future work only: `IndexHNSWFlat` for larger local corpora, IVF/PQ for memory reduction, full-corpus pre-indexing, GPU FAISS if explicitly requested, and benchmark-guided parameter tuning.
+:Tests: No tests needed.
+:Done when: Advanced FAISS work is identified as future scope, not included in the substitution plan.
+:END:
