@@ -112,9 +112,9 @@
     <article>
       <h3>OVMS</h3>
       <p>Status: {ovmsHealth.status}</p>
-      {#if ovmsHealth.error}<p class="error">{ovmsHealth.error}</p>{/if}
+      {#if ovmsHealth.error}<pre class="error-block">{ovmsHealth.error}</pre>{/if}
       {#if ovmsHealth.setupCommand}
-        <code>{ovmsHealth.setupCommand}</code>
+        <pre class="info-block">{ovmsHealth.setupCommand}</pre>
       {/if}
     </article>
   </section>
@@ -211,6 +211,5 @@
     max-height: 180px;
   }
   ul { margin: 8px 0 0; padding-left: 18px; }
-  code { display: block; white-space: pre-wrap; margin-top: 6px; font-size: 0.8rem; }
   pre { max-height: 240px; overflow: auto; background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 8px; }
 </style>

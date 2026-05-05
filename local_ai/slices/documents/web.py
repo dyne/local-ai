@@ -19,7 +19,11 @@ def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
             embedding_model=bundle.config.embedding_model_name,  # type: ignore[attr-defined]
             generation_model=bundle.config.generation_model_name,  # type: ignore[attr-defined]
         )
-        return JSONResponse(response.to_dict())
+        payload = response.to_dict()
+        ovms = ((payload.get("health") or {}).get("ovms") if isinstance(payload.get("health"), dict) else None)  # type: ignore[union-attr]
+        if isinstance(ovms, dict) and ovms.get("status") in {"unavailable", "error"}:
+            _LOG.warning("Documents OVMS unavailable in /api/documents/status: %s", ovms)
+        return JSONResponse(payload)
 
     @app.post("/api/documents/sources")
     async def add_documents_source(request: Request) -> JSONResponse:
@@ -119,6 +123,8 @@ def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
             embedding_model=bundle.config.embedding_model_name,  # type: ignore[attr-defined]
             generation_model=bundle.config.generation_model_name,  # type: ignore[attr-defined]
         )
+        if payload.get("status") in {"unavailable", "error"}:
+            _LOG.warning("Documents OVMS health unavailable: %s", payload)
         return JSONResponse(payload)
 
     @app.get("/api/documents/health/redis")
