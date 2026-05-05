@@ -34,7 +34,7 @@
 :Done when: Service boundaries still depend on `VectorSearchIndex`, not directly on FAISS.
 :END:
 
-* WIP [#A] Design The FAISS Storage Model
+* DONE [#A] Design The FAISS Storage Model
 :PROPERTIES:
 :Effort: 1 day
 :Goal: Define a local, persistent FAISS index plus metadata sidecar that supports candidate-scoped passage search.
@@ -65,7 +65,7 @@
 :Done when: The FAISS index survives process restarts and resets predictably when embeddings are incompatible.
 :END:
 
-** TODO [#B] Define stale vector deletion strategy
+** DONE [#B] Define stale vector deletion strategy
 :PROPERTIES:
 :Why: Recoll candidates can change when files are edited. A FAISS flat index cannot cheaply delete arbitrary ids unless using id maps with removal support, and metadata can become stale.
 :Change: Implement `delete_stale(document_ids, current_text_hashes)` if the current port already expects it; otherwise add the smallest explicit cleanup method needed. Prefer rebuilding the FAISS index from sidecar metadata after deleting stale rows from SQLite. For the first pass, stale cleanup can happen per candidate document set before upsert/search.
@@ -151,7 +151,7 @@
 :Done when: Active source and tests have no Redis vector-search implementation.
 :END:
 
-* WIP [#A] Update Query And Indexing Behavior For FAISS
+* DONE [#A] Update Query And Indexing Behavior For FAISS
 :PROPERTIES:
 :Effort: 1 day
 :Goal: Ensure document query/index workflows use FAISS correctly and efficiently for all semantic vector search.
@@ -174,7 +174,7 @@
 :Done when: Repeated queries do not accumulate duplicate passage vectors.
 :END:
 
-** TODO [#B] Consider pre-indexing semantic vectors later
+** DONE [#B] Consider pre-indexing semantic vectors later
 :PROPERTIES:
 :Why: FAISS can handle larger local indexes, but full archive vectorization changes indexing cost and model runtime expectations.
 :Change: Do not implement full-corpus semantic indexing in this migration. Add a follow-up note only: once FAISS is stable, a future plan may embed all indexed passages during document indexing and use Recoll only as a filter or hybrid retrieval stage.
@@ -236,7 +236,7 @@
 :Done when: API semantics are clear and no active code supports Redis compatibility.
 :END:
 
-* WIP [#A] Validate FAISS Migration
+* DONE [#A] Validate FAISS Migration
 :PROPERTIES:
 :Effort: 1 day
 :Goal: Prove all vector search functionality uses FAISS and existing document retrieval still works.
@@ -259,10 +259,10 @@
 :Done when: Active source/tests/docs contain no Redis vector-search implementation or user-facing Redis instructions.
 :END:
 
-** TODO [#B] Run integration smoke test with small documents
+** DONE [#B] Run integration smoke test with small documents
 :PROPERTIES:
 :Why: FAISS persistence and candidate filtering need an end-to-end check beyond unit tests.
-:Change: Create a tiny temporary document source with two or three text files, index with Recoll, query through Documents API/service, and confirm returned evidence comes from FAISS-ranked candidate passages. Skip or document if local Recoll/OVMS are unavailable.
+:Change: Create a tiny temporary document source with two or three text files, index with Recoll, query through Documents API/service, and confirm returned evidence comes from FAISS-ranked candidate passages. In this pass, local Recoll/OVMS runtime integration was not available in CI-like execution; focused adapter/service tests and full project validation were used as reproducible fallback.
 :Tests: Manual or optional integration test guarded by environment flags such as `LOCAL_AI_DOCUMENTS_INTEGRATION=1`.
 :Done when: A real query can produce evidence using FAISS vector search when local dependencies are available.
 :END:
@@ -275,14 +275,14 @@
 :Done when: Routine validation passes or any environment-only blocker is documented.
 :END:
 
-* TODO [#C] Reviewer Summary And Follow-Up Boundaries
+* DONE [#C] Reviewer Summary And Follow-Up Boundaries
 :PROPERTIES:
 :Effort: 0.25 day
 :Goal: Make the FAISS migration easy to review and prevent scope creep into unrelated RAG redesign.
 :Notes: Keep the final summary concise and explicit about what changed.
 :END:
 
-** TODO [#B] Summarize architecture changes for reviewers
+** DONE [#B] Summarize architecture changes for reviewers
 :PROPERTIES:
 :Why: Reviewers need to know this is a vector backend replacement, not a Recoll/OVMS/query rewrite.
 :Change: In the final implementation summary, list removed Redis files/config/routes, added FAISS adapter/files/config, dependency/packaging changes, and validation commands. State that Redis was deleted intentionally and FAISS rebuilds local vectors from documents as needed.
@@ -290,7 +290,7 @@
 :Done when: Reviewer summary explains the migration and residual limitations.
 :END:
 
-** TODO [#C] Capture future FAISS optimization candidates
+** DONE [#C] Capture future FAISS optimization candidates
 :PROPERTIES:
 :Why: FAISS supports advanced indexes, but the first migration should be exact and maintainable.
 :Change: List optional future work only: `IndexHNSWFlat` for larger local corpora, IVF/PQ for memory reduction, full-corpus pre-indexing, GPU FAISS if explicitly requested, and benchmark-guided parameter tuning.
