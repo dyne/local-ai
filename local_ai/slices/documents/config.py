@@ -37,6 +37,7 @@ class DocumentsConfig:
     app_data_dir: Path
     recoll_bin_dir: Path
     recoll_home_dir: Path
+    recoll_data_dir: Path | None
     redis_url: str
     redis_index_name: str
     ovms_base_url: str
@@ -71,6 +72,7 @@ def load_documents_config(repo_root: Path | None = None) -> DocumentsConfig:
         recoll_home_dir=Path(
             _env("LOCAL_AI_DOCUMENTS_RECOLL_HOME_DIR", str(app_data_dir / "recoll"))
         ),
+        recoll_data_dir=Path(value).expanduser() if (value := os.getenv("LOCAL_AI_DOCUMENTS_RECOLL_DATA_DIR")) else None,
         redis_url=_env("LOCAL_AI_DOCUMENTS_REDIS_URL", "redis://localhost:6379"),
         redis_index_name=_env("LOCAL_AI_DOCUMENTS_REDIS_INDEX_NAME", "local-ai-documents"),
         ovms_base_url=_env("LOCAL_AI_DOCUMENTS_OVMS_URL", "http://127.0.0.1:8080"),

@@ -26,12 +26,15 @@ class SubprocessCommandRunner:
         *,
         cwd: Path | None = None,
         extra_path_entries: tuple[Path, ...] = (),
+        extra_env: dict[str, str] | None = None,
         timeout_seconds: int = 120,
     ) -> CommandResult:
         env = os.environ.copy()
         if extra_path_entries:
             prefix = os.pathsep.join(str(entry) for entry in extra_path_entries)
             env["PATH"] = f"{prefix}{os.pathsep}{env.get('PATH', '')}"
+        if extra_env:
+            env.update(extra_env)
         started = time.monotonic()
         completed = subprocess.run(  # noqa: S603
             command,

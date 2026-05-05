@@ -46,6 +46,7 @@ def build_documents_service_bundle(config: DocumentsConfig | None = None) -> Doc
         recoll_bin_dir=resolved_config.recoll_bin_dir,
         recoll_home_dir=resolved_config.recoll_home_dir,
         app_data_dir=resolved_config.app_data_dir,
+        recoll_data_dir=resolved_config.recoll_data_dir,
     )
     text_loader = CandidateTextLoader()
     splitter = DeterministicPassageSplitter()
