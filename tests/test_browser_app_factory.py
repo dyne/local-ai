@@ -47,6 +47,33 @@ def test_build_browser_app_registers_app_roles_route_when_handler_provided() -> 
     assert response.json() == {"roles": [{"id": "voice"}]}
 
 
+def test_build_browser_app_registers_app_log_routes_when_handlers_provided() -> None:
+    async def app_logs_handler(request) -> object:
+        return {"query": request.query_params.get("q"), "events": []}
+
+    async def app_log_events_handler() -> object:
+        return {"ok": True}
+
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=lambda payload: None,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+        app_logs_handler=app_logs_handler,
+        app_log_events_handler=app_log_events_handler,
+    )
+
+    client = TestClient(app)
+    logs_response = client.get("/api/app/logs?q=boom")
+    events_response = client.get("/api/app/logs/events")
+
+    assert logs_response.status_code == 200
+    assert logs_response.json() == {"query": "boom", "events": []}
+    assert events_response.status_code == 200
+    assert events_response.json() == {"ok": True}
+
+
 def test_build_browser_app_registers_upload_route_when_handler_provided() -> None:
     async def upload_handler(request) -> object:
         assert request.headers.get("x-source-name") == "sample.wav"
