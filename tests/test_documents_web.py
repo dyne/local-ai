@@ -157,10 +157,17 @@ def test_index_endpoint_handles_internal_error() -> None:
         repository=_Repository(),
         text_loader=_TextLoader(),
     )
-    register_documents_routes(app, bundle=bundle)
+    published: list[dict[str, object]] = []
+    register_documents_routes(
+        app,
+        bundle=bundle,
+        publish_log_event=lambda **event: published.append(event),
+    )
     response = TestClient(app).post("/api/documents/index", json={"rebuild": True})
     assert response.status_code == 500
     assert "Documents indexing failed" in response.json()["detail"]
+    assert published[-1]["level"] == "ERROR"
+    assert published[-1]["source"] == "documents.index"
 
 
 def test_health_endpoints() -> None:
