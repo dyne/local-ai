@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 import pathlib
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import HTMLResponse
@@ -20,8 +21,20 @@ def build_browser_app(
     app_roles_handler: Callable[[], Awaitable[object]] | None = None,
     upload_transcription_handler: Callable[[Request], Awaitable[object]] | None = None,
     register_extra_routes: Callable[[FastAPI], None] | None = None,
+    startup_hook: Callable[[], None] | None = None,
+    shutdown_hook: Callable[[], None] | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Browser Mic Transcriber")
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):  # type: ignore[unused-private-member]
+        if startup_hook is not None:
+            startup_hook()
+        try:
+            yield
+        finally:
+            if shutdown_hook is not None:
+                shutdown_hook()
+
+    app = FastAPI(title="Browser Mic Transcriber", lifespan=_lifespan)
 
     if static_assets_dir is not None and static_assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=str(static_assets_dir)), name="assets")
