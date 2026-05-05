@@ -258,7 +258,11 @@ class AudioStreamService:
             app_logs_handler=app_logs,
             app_log_events_handler=app_log_events,
             upload_transcription_handler=upload_transcription,
-            register_extra_routes=lambda app: register_documents_routes(app, bundle=documents_bundle),
+            register_extra_routes=lambda app: register_documents_routes(
+                app,
+                bundle=documents_bundle,
+                publish_log_event=self.publish_log_event,
+            ),
             startup_hook=ovms_manager.startup,
             shutdown_hook=ovms_manager.shutdown,
         )
