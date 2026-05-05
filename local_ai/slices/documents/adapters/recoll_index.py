@@ -95,6 +95,7 @@ class RecollLexicalSearchIndex:
         recoll_data_dir, error = self._resolve_recoll_data_dir()
         if recoll_data_dir is None:
             raise RecollAdapterError(error or "Recoll data directory is missing.")
+        recoll_data_dir = self._ensure_recoll_data_layout(recoll_data_dir)
         return self._runner.run(
             command,
             cwd=self._recoll_home_dir,
@@ -127,6 +128,18 @@ class RecollLexicalSearchIndex:
             None,
             "Recoll installation data not found. Expected a directory with 'backends' (sampleconf) or 'examples/backends'. Set LOCAL_AI_DOCUMENTS_RECOLL_DATA_DIR or RECOLL_DATADIR.",
         )
+
+    def _ensure_recoll_data_layout(self, recoll_data_dir: Path) -> Path:
+        examples_backends = recoll_data_dir / "examples" / "backends"
+        if examples_backends.exists():
+            return recoll_data_dir
+        direct_backends = recoll_data_dir / "backends"
+        if not direct_backends.is_file():
+            return recoll_data_dir
+        examples_backends.parent.mkdir(parents=True, exist_ok=True)
+        if not examples_backends.exists():
+            shutil.copyfile(direct_backends, examples_backends)
+        return recoll_data_dir
 
     def _safe_remove_recoll_home(self) -> None:
         resolved_home = self._recoll_home_dir.resolve()

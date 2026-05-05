@@ -143,3 +143,26 @@ def test_health_accepts_sampleconf_backends_file(tmp_path: Path) -> None:
     )
     health = index.health()
     assert health["status"] == "ready"
+
+
+def test_index_creates_examples_backends_shim_for_sampleconf(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "recoll"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "recollindex.exe").write_text("", encoding="utf-8")
+    (bin_dir / "recollq.exe").write_text("", encoding="utf-8")
+    sampleconf = bin_dir / "sampleconf"
+    sampleconf.mkdir(parents=True)
+    (sampleconf / "backends").write_text("backend config", encoding="utf-8")
+    runner = _FakeRunner(CommandResult(returncode=0, stdout="", stderr="", elapsed_ms=8))
+    index = RecollLexicalSearchIndex(
+        recoll_bin_dir=bin_dir,
+        recoll_home_dir=tmp_path / "home",
+        app_data_dir=tmp_path / "app-data",
+        recoll_data_dir=sampleconf,
+        runner=runner,  # type: ignore[arg-type]
+    )
+    source = ArchiveSource(source_id="src-1", root_path=str((tmp_path / "archive").resolve()))
+    index.configure_sources((source,))
+    run = index.index(rebuild=False)
+    assert run.status == "success"
+    assert (sampleconf / "examples" / "backends").exists()
