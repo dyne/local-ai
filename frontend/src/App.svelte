@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
 
   import AppShell from "./components/AppShell.svelte";
+  import DocumentsWorkspace from "./features/documents/DocumentsWorkspace.svelte";
   import VoiceTranscription from "./features/voice/VoiceTranscription.svelte";
   import { fallbackRoles, parseRolesResponse } from "./lib/roles";
 
@@ -42,6 +43,8 @@
   <AppShell {roles} {activeRoleId} onSelectRole={selectRole}>
     {#if activeRoleId === "voice"}
       <VoiceTranscription />
+    {:else if activeRoleId === "documents"}
+      <DocumentsWorkspace />
     {:else}
       <section class="placeholder">
         <p class="eyebrow">Role</p>
