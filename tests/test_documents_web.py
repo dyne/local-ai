@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from local_ai.slices.documents.response import AddSourceResponse, DocumentsStatusResponse, IndexSourceResponse
+from local_ai.slices.documents.domain import DocumentRef
+from local_ai.slices.documents.response import AddSourceResponse, DocumentsStatusResponse, IndexSourceResponse, QueryDocumentsResponse
 from local_ai.slices.documents.web import register_documents_routes
 
 
@@ -40,6 +41,11 @@ class _IndexService:
         return IndexSourceResponse(status="invalid", message="no sources")
 
 
+class _QueryService:
+    def execute(self, request):
+        return QueryDocumentsResponse(status="ok", generation_status="not_configured", lexical_candidate_count=1)
+
+
 class _LexicalIndex:
     def health(self):
         return {"status": "ready"}
@@ -50,6 +56,26 @@ class _Ovms:
         return {"status": "ready", "embedding_model": embedding_model, "generation_model": generation_model}
 
 
+class _Repository:
+    def get_document_ref(self, document_id: str):
+        if document_id == "doc-1":
+            return DocumentRef(
+                document_id="doc-1",
+                source_id="src-1",
+                source_path="C:\\archive\\doc.txt",
+                title="Doc",
+                mime_type="text/plain",
+            )
+        return None
+
+
+class _TextLoader:
+    def load_candidate_text(self, candidate):
+        from local_ai.slices.documents.domain import DocumentText
+
+        return DocumentText(document_id=candidate.document_id, text="example text")
+
+
 @dataclass(frozen=True)
 class _Bundle:
     config: _Config
@@ -58,6 +84,9 @@ class _Bundle:
     index_documents_service: _IndexService
     lexical_index: _LexicalIndex
     ovms_client: _Ovms
+    query_documents_service: _QueryService
+    repository: _Repository
+    text_loader: _TextLoader
 
 
 def _client() -> TestClient:
@@ -69,6 +98,9 @@ def _client() -> TestClient:
         index_documents_service=_IndexService(),
         lexical_index=_LexicalIndex(),
         ovms_client=_Ovms(),
+        query_documents_service=_QueryService(),
+        repository=_Repository(),
+        text_loader=_TextLoader(),
     )
     register_documents_routes(app, bundle=bundle)
     return TestClient(app)
@@ -104,3 +136,18 @@ def test_health_endpoints() -> None:
     assert client.get("/api/documents/health/ovms").status_code == 200
     redis_payload = client.get("/api/documents/health/redis").json()
     assert redis_payload["status"] == "not_configured"
+
+
+def test_query_endpoint() -> None:
+    response = _client().post("/api/documents/query", json={"query": "hello"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_get_document_endpoint() -> None:
+    client = _client()
+    ok = client.get("/api/documents/doc-1")
+    missing = client.get("/api/documents/unknown")
+    assert ok.status_code == 200
+    assert ok.json()["document"]["text"] == "example text"
+    assert missing.status_code == 404

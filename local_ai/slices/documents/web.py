@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from local_ai.slices.documents.request import AddSourceRequest, IndexSourceRequest
+from local_ai.slices.documents.request import AddSourceRequest, IndexSourceRequest, QueryDocumentsRequest
 
 
 def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
@@ -42,6 +42,52 @@ def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
         response = bundle.index_documents_service.execute(parsed)  # type: ignore[attr-defined]
         status_code = 200 if response.status in {"success", "ok"} else 400
         return JSONResponse(response.to_dict(), status_code=status_code)
+
+    @app.post("/api/documents/query")
+    async def query_documents(request: Request) -> JSONResponse:
+        try:
+            payload = await request.json()
+            parsed = QueryDocumentsRequest(**payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+        response = bundle.query_documents_service.execute(parsed)  # type: ignore[attr-defined]
+        return JSONResponse(response.to_dict(), status_code=200)
+
+    @app.get("/api/documents/{document_id}")
+    async def get_document(document_id: str) -> JSONResponse:
+        if not document_id.strip():
+            raise HTTPException(status_code=400, detail="document_id must be non-empty.")
+        doc_ref = bundle.repository.get_document_ref(document_id)  # type: ignore[attr-defined]
+        if doc_ref is None:
+            raise HTTPException(status_code=404, detail="Unknown document id.")
+        candidate = type(
+            "_Candidate",
+            (),
+            {
+                "document_id": doc_ref.document_id,
+                "source_path": doc_ref.source_path,
+                "title": doc_ref.title,
+                "snippet": "",
+                "lexical_rank": 0,
+            },
+        )()
+        text = bundle.text_loader.load_candidate_text(candidate)  # type: ignore[attr-defined]
+        return JSONResponse(
+            {
+                "status": "ok",
+                "document": {
+                    "document_id": doc_ref.document_id,
+                    "source_id": doc_ref.source_id,
+                    "source_path": doc_ref.source_path,
+                    "title": doc_ref.title,
+                    "mime_type": doc_ref.mime_type,
+                    "text": text.text,
+                    "warning": text.warning,
+                },
+            }
+        )
 
     @app.get("/api/documents/health/recoll")
     async def documents_recoll_health() -> JSONResponse:
