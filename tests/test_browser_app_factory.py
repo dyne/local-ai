@@ -152,3 +152,30 @@ def test_build_browser_app_returns_400_for_invalid_json_body() -> None:
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Invalid JSON body."}
+
+
+def test_build_browser_app_registers_extra_routes_callback() -> None:
+    called = {"value": False}
+
+    def register_extra(app) -> None:
+        called["value"] = True
+
+        @app.get("/extra")
+        async def _extra() -> object:
+            return {"ok": True}
+
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=lambda payload: None,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+        register_extra_routes=register_extra,
+    )
+
+    client = TestClient(app)
+    response = client.get("/extra")
+
+    assert called["value"] is True
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}

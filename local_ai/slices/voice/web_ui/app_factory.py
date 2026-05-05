@@ -19,6 +19,7 @@ def build_browser_app(
     close_session_handler: Callable[[str], Awaitable[object]],
     app_roles_handler: Callable[[], Awaitable[object]] | None = None,
     upload_transcription_handler: Callable[[Request], Awaitable[object]] | None = None,
+    register_extra_routes: Callable[[FastAPI], None] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Browser Mic Transcriber")
 
@@ -56,5 +57,7 @@ def build_browser_app(
             return await upload_transcription_handler(request)
 
     register_app_shell_routes(app, app_roles_handler=app_roles_handler)
+    if register_extra_routes is not None:
+        register_extra_routes(app)
 
     return app
