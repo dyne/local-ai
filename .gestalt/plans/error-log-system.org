@@ -34,7 +34,7 @@
 :Done when: The frontend has one stable event shape for log UI and notification logic.
 :END:
 
-* WIP [#A] Add Backend Log Bus And Console Adapter
+* DONE [#A] Add Backend Log Bus And Console Adapter
 :PROPERTIES:
 :Effort: 1 day
 :Goal: Centralize application log publication while preserving console output.
@@ -65,7 +65,7 @@
 :Done when: Existing services can continue using the old callback while logs flow into the new system.
 :END:
 
-* WIP [#A] Expose Logs To The Browser
+* DONE [#A] Expose Logs To The Browser
 :PROPERTIES:
 :Effort: 1 day
 :Goal: Let the Svelte app fetch recent logs and receive live log events independently from transcript streams.
@@ -96,7 +96,7 @@
 :Done when: Voice runtime/server errors show up in the log bus and still remain understandable in the voice workflow.
 :END:
 
-* WIP [#A] Build Searchable GUI Log Section
+* DONE [#A] Build Searchable GUI Log Section
 :PROPERTIES:
 :Effort: 1.5 days
 :Goal: Add a GUI section that displays logs, supports search/filtering, and stays useful without overwhelming the main workflow.
@@ -119,7 +119,7 @@
 :Done when: Users can open the GUI log section, search logs, filter errors, and inspect details without affecting active voice/document workflows.
 :END:
 
-** TODO [#B] Preserve transcript and role-specific output separation
+** DONE [#B] Preserve transcript and role-specific output separation
 :PROPERTIES:
 :Why: Voice transcripts are user output, while logs are operational diagnostics. Mixing them makes search and export behavior confusing.
 :Change: Stop appending generic debug/error logs directly to transcript output except for voice-specific status messages that are part of the workflow. Route operational messages into the log panel and show only user-facing transcript/upload results in voice output.
@@ -127,7 +127,7 @@
 :Done when: Transcript output remains clean and operational logs are searchable in the log section.
 :END:
 
-* WIP [#A] Add ERROR Notifications
+* DONE [#A] Add ERROR Notifications
 :PROPERTIES:
 :Effort: 0.75 day
 :Goal: Surface ERROR events immediately as GUI notifications without requiring the user to watch the log panel.
@@ -150,7 +150,7 @@
 :Done when: Repeated ERRORs remain visible without flooding the interface.
 :END:
 
-** TODO [#C] Consider optional native notification bridge later
+** DONE [#C] Consider optional native notification bridge later
 :PROPERTIES:
 :Why: Native desktop notifications may be useful in pywebview, but they are not required for a first maintainable implementation and may differ by platform.
 :Change: Do not implement native notifications in the first pass. Leave a follow-up note only if the in-app notification architecture has a clean adapter point.
@@ -158,7 +158,7 @@
 :Done when: The plan does not block on native notification permissions or platform-specific APIs.
 :END:
 
-* WIP [#B] Integrate Documents And Future Roles
+* DONE [#B] Integrate Documents And Future Roles
 :PROPERTIES:
 :Effort: 0.75 day
 :Goal: Make logs app-wide so documents, OCR, and future roles can publish diagnostics consistently.
@@ -173,7 +173,7 @@
 :Done when: Document-related errors appear in console, log panel, and ERROR notifications.
 :END:
 
-** TODO [#C] Define source naming conventions for role logs
+** DONE [#C] Define source naming conventions for role logs
 :PROPERTIES:
 :Why: Search/filtering is only useful if sources are stable and predictable.
 :Change: Use source names such as `app`, `voice.live`, `voice.upload`, `voice.runtime`, `documents.index`, `documents.query`, `ocr`. Document this in `AGENTS.md` after implementation.
@@ -181,14 +181,14 @@
 :Done when: Logs can be filtered by source consistently across roles.
 :END:
 
-* TODO [#A] Validate And Document The Logging Workflow
+* WIP [#A] Validate And Document The Logging Workflow
 :PROPERTIES:
 :Effort: 0.75 day
 :Goal: Prove logs reach console, GUI history, live GUI updates, and notifications without breaking current workflows.
 :Notes: Follow the repo workflow: focused tests after code changes, conventional commits per L2 when implementing, and full validation at L1 completion.
 :END:
 
-** TODO [#A] Run focused backend logging tests
+** DONE [#A] Run focused backend logging tests
 :PROPERTIES:
 :Why: The log bus and SSE endpoints are shared infrastructure and need strong regression coverage.
 :Change: Run pytest for new log bus tests, app-shell log route tests, voice web error tests, and document logging tests if added.
@@ -196,7 +196,7 @@
 :Done when: Backend logging tests pass.
 :END:
 
-** TODO [#A] Run focused frontend logging tests and build
+** DONE [#A] Run focused frontend logging tests and build
 :PROPERTIES:
 :Why: The log panel, search helpers, and notifications become part of the main app shell.
 :Change: Run frontend tests and production build.
