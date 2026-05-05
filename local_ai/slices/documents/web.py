@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from local_ai.slices.documents.request import AddSourceRequest, IndexSourceRequest, QueryDocumentsRequest
+
+_LOG = logging.getLogger(__name__)
 
 
 def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
@@ -26,8 +30,14 @@ def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
-        response = bundle.add_source_service.execute(parsed)  # type: ignore[attr-defined]
+        try:
+            response = bundle.add_source_service.execute(parsed)  # type: ignore[attr-defined]
+        except Exception as exc:
+            _LOG.exception("Documents add-source failed.")
+            raise HTTPException(status_code=500, detail="Documents source registration failed.") from exc
         status_code = 200 if response.status == "ok" else 400
+        if status_code >= 400:
+            _LOG.warning("Documents add-source validation failed: %s", response.to_dict())
         return JSONResponse(response.to_dict(), status_code=status_code)
 
     @app.post("/api/documents/index")
@@ -39,8 +49,14 @@ def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
-        response = bundle.index_documents_service.execute(parsed)  # type: ignore[attr-defined]
+        try:
+            response = bundle.index_documents_service.execute(parsed)  # type: ignore[attr-defined]
+        except Exception as exc:
+            _LOG.exception("Documents index failed.")
+            raise HTTPException(status_code=500, detail="Documents indexing failed. Check Recoll logs and health endpoints.") from exc
         status_code = 200 if response.status in {"success", "ok"} else 400
+        if status_code >= 400:
+            _LOG.warning("Documents index returned non-success response: %s", response.to_dict())
         return JSONResponse(response.to_dict(), status_code=status_code)
 
     @app.post("/api/documents/query")
@@ -52,7 +68,11 @@ def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
-        response = bundle.query_documents_service.execute(parsed)  # type: ignore[attr-defined]
+        try:
+            response = bundle.query_documents_service.execute(parsed)  # type: ignore[attr-defined]
+        except Exception as exc:
+            _LOG.exception("Documents query failed.")
+            raise HTTPException(status_code=500, detail="Documents query failed. Check Documents health endpoints.") from exc
         return JSONResponse(response.to_dict(), status_code=200)
 
     @app.get("/api/documents/{document_id}")

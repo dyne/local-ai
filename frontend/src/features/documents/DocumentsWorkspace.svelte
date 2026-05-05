@@ -119,7 +119,7 @@
     </article>
   </section>
 
-  {#if statusError}<p class="error">{statusError}</p>{/if}
+  {#if statusError}<pre class="error-block">{statusError}</pre>{/if}
 
   <section class="panel">
     <h3>Sources</h3>
@@ -129,8 +129,8 @@
       <button type="button" on:click={() => runIndex(false)}>Index</button>
       <button type="button" on:click={() => runIndex(true)}>Rebuild</button>
     </div>
-    {#if sourceMessage}<p>{sourceMessage}</p>{/if}
-    {#if indexError}<p class="error">{indexError}</p>{/if}
+    {#if sourceMessage}<pre class="info-block">{sourceMessage}</pre>{/if}
+    {#if indexError}<pre class="error-block">{indexError}</pre>{/if}
     <ul>
       {#each sources as source}
         <li><strong>{source.label || source.source_id}</strong> - {source.root_path}</li>
@@ -144,7 +144,7 @@
       <input bind:value={queryText} placeholder="Ask about indexed content" />
       <button type="button" on:click={submitQuery}>Run Query</button>
     </div>
-    {#if queryError}<p class="error">{queryError}</p>{/if}
+    {#if queryError}<pre class="error-block">{queryError}</pre>{/if}
     {#if warnings.length > 0}
       <ul>
         {#each warnings as warning}
@@ -190,6 +190,26 @@
   input { flex: 1; min-width: 220px; border: 1px solid #c8d2dc; border-radius: 8px; padding: 8px; font: inherit; }
   button { border: 1px solid #96a6b7; border-radius: 8px; padding: 8px 10px; background: #f5f8fb; font: inherit; cursor: pointer; }
   .error { color: #9a2f2f; font-weight: 600; }
+  .info-block, .error-block {
+    margin: 8px 0 0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    overflow: auto;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .info-block {
+    border: 1px solid #d7dfe7;
+    background: #f8fafc;
+    color: #1f2937;
+  }
+  .error-block {
+    border: 1px solid #ef9a9a;
+    background: #fff1f1;
+    color: #7f1d1d;
+    max-height: 180px;
+  }
   ul { margin: 8px 0 0; padding-left: 18px; }
   code { display: block; white-space: pre-wrap; margin-top: 6px; font-size: 0.8rem; }
   pre { max-height: 240px; overflow: auto; background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 8px; }

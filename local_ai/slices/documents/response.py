@@ -4,6 +4,18 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
 
+def _json_ready(value: object) -> object:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, tuple):
+        return tuple(_json_ready(item) for item in value)
+    if isinstance(value, list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    return value
+
+
 @dataclass(frozen=True)
 class AddSourceResponse:
     """Response payload for source registration."""
@@ -13,7 +25,7 @@ class AddSourceResponse:
     message: str | None = None
 
     def to_dict(self) -> dict[str, object | None]:
-        return asdict(self)
+        return _json_ready(asdict(self))  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -29,7 +41,7 @@ class IndexSourceResponse:
     warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object | None]:
-        return asdict(self)
+        return _json_ready(asdict(self))  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -48,7 +60,7 @@ class QueryDocumentsResponse:
     elapsed_ms: int = 0
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        return _json_ready(asdict(self))  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -60,7 +72,7 @@ class GetDocumentResponse:
     message: str | None = None
 
     def to_dict(self) -> dict[str, object | None]:
-        return asdict(self)
+        return _json_ready(asdict(self))  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -74,7 +86,7 @@ class DocumentsStatusResponse:
     message: str | None = None
 
     def to_dict(self) -> dict[str, object | None]:
-        return asdict(self)
+        return _json_ready(asdict(self))  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
@@ -86,4 +98,4 @@ class HealthResponse:
     details: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        return _json_ready(asdict(self))  # type: ignore[return-value]
