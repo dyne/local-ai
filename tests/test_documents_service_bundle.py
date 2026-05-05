@@ -23,5 +23,7 @@ def test_build_service_bundle(tmp_path: Path) -> None:
     assert bundle.repository is not None
     assert bundle.lexical_index is not None
     assert bundle.text_loader is not None
+    assert bundle.ovms_client is not None
+    assert bundle.status_service is not None
     assert bundle.add_source_service is not None
     assert bundle.index_documents_service is not None
