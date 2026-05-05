@@ -45,7 +45,7 @@ The repository is no longer a single-script implementation. It is now organized 
 - `local_ai/slices/app_shell`
   - app-level role catalog and shared app-shell web routes
 - `local_ai/slices/documents`
-  - placeholder documents slice boundaries for future implementation
+  - local Documents RAG slice (Recoll lexical retrieval + candidate-scoped semantic refinement + grounded answer generation)
 - `local_ai/slices/ocr`
   - placeholder OCR slice boundaries for future implementation
 - `frontend`
@@ -142,6 +142,31 @@ This is intentionally concrete. The repository is voice-first today, with archit
 - browser decode path remains decode -> denoise -> VAD -> final resample
 - uploaded media and CLI file mode share frame normalization through `local_ai/slices/voice/shared/media_decode.py`
 - live chunking and overlap settings must remain behaviorally stable unless intentionally changed and tested
+
+### Documents
+
+- stage 1 retrieval is lexical via bundled `recoll/recollindex.exe` and `recoll/recollq.exe`
+- stage 2 refinement is semantic and candidate-scoped only; it uses Redis vector search through the documents vector index adapter
+- embedding and optional answer generation run through local OVMS HTTP endpoints
+- canonical OVMS startup:
+  - `cd C:\Users\denis\devel\local-ai\llm`
+  - `.\ovms\setupvars.ps1`
+  - `ovms --rest_port 8080 --config_path C:\Users\denis\devel\local-ai\llm\models\config.json`
+- default embedding model name: `qwen3-embed-ov`
+- generation remains evidence-first and returns `generation_status="not_configured"` when no generation model is configured
+- documents web routes:
+  - `GET /api/documents/status`
+  - `POST /api/documents/sources`
+  - `POST /api/documents/index`
+  - `POST /api/documents/query`
+  - `GET /api/documents/{document_id}`
+  - `GET /api/documents/health/recoll`
+  - `GET /api/documents/health/redis`
+  - `GET /api/documents/health/ovms`
+- documents CLI shell:
+  - `py -3.11 .\local-ai-documents.py add-source <path>`
+  - `py -3.11 .\local-ai-documents.py index [--rebuild]`
+  - `py -3.11 .\local-ai-documents.py query "<question>"`
 
 ## Repository Map
 
