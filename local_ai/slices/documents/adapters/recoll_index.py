@@ -96,12 +96,13 @@ class RecollLexicalSearchIndex:
         if recoll_data_dir is None:
             raise RecollAdapterError(error or "Recoll data directory is missing.")
         recoll_data_dir = self._ensure_recoll_data_layout(recoll_data_dir)
+        recoll_data_root = self._prepare_recoll_data_root(recoll_data_dir)
         return self._runner.run(
             command,
             cwd=self._recoll_home_dir,
             extra_path_entries=(self._recoll_bin_dir,),
             extra_env={
-                "RECOLL_DATADIR": str(recoll_data_dir),
+                "RECOLL_DATADIR": str(recoll_data_root),
                 "RECOLL_CONFDIR": str(self._recoll_home_dir),
             },
         )
@@ -144,10 +145,26 @@ class RecollLexicalSearchIndex:
             shutil.copyfile(direct_backends, examples_backends)
         return recoll_data_dir
 
+    def _prepare_recoll_data_root(self, recoll_data_dir: Path) -> Path:
+        if (recoll_data_dir / "examples" / "backends").exists() and (recoll_data_dir / "examples" / "recoll.conf").exists():
+            return recoll_data_dir
+        shim_root = self._recoll_home_dir / "__datadir"
+        examples_dir = shim_root / "examples"
+        if examples_dir.exists():
+            shutil.rmtree(examples_dir)
+        examples_dir.mkdir(parents=True, exist_ok=True)
+        source_dir = recoll_data_dir / "examples" if (recoll_data_dir / "examples" / "recoll.conf").exists() else recoll_data_dir
+        shutil.copytree(source_dir, examples_dir, dirs_exist_ok=True)
+        return shim_root
+
     def _safe_remove_recoll_home(self) -> None:
         resolved_home = self._recoll_home_dir.resolve()
         resolved_app_data = self._app_data_dir.resolve()
-        if resolved_app_data not in resolved_home.parents and resolved_home != resolved_app_data:
+        localai_root = resolved_app_data.parent.parent if len(resolved_app_data.parents) >= 2 else resolved_app_data.parent
+        allowed_cache_root = localai_root / "Cache"
+        is_under_app_data = resolved_app_data in resolved_home.parents or resolved_home == resolved_app_data
+        is_under_cache = allowed_cache_root in resolved_home.parents or resolved_home == allowed_cache_root
+        if not is_under_app_data and not is_under_cache:
             raise RecollAdapterError("Refusing to remove Recoll home outside app data directory.")
         shutil.rmtree(resolved_home)
 
