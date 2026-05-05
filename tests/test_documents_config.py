@@ -61,13 +61,15 @@ def test_config_environment_overrides(monkeypatch, tmp_path: Path) -> None:
     (repo_root / "llm" / "ovms").mkdir(parents=True)
     (repo_root / "llm" / "ovms" / "setupvars.ps1").write_text("echo ok", encoding="utf-8")
 
-    monkeypatch.setenv("LOCAL_AI_DOCUMENTS_REDIS_URL", "redis://localhost:6380")
+    monkeypatch.setenv("LOCAL_AI_DOCUMENTS_FAISS_INDEX_PATH", str(tmp_path / "faiss" / "index.faiss"))
+    monkeypatch.setenv("LOCAL_AI_DOCUMENTS_FAISS_METADATA_DB_PATH", str(tmp_path / "faiss" / "meta.sqlite3"))
     monkeypatch.setenv("LOCAL_AI_DOCUMENTS_OVMS_URL", "http://127.0.0.1:9000")
     monkeypatch.setenv("LOCAL_AI_DOCUMENTS_GENERATION_MODEL", "qwen3-llm-ov")
     monkeypatch.setenv("LOCAL_AI_DOCUMENTS_OVMS_AUTOSTART", "0")
 
     config = load_documents_config(repo_root=repo_root)
-    assert config.redis_url == "redis://localhost:6380"
+    assert config.faiss_index_path == tmp_path / "faiss" / "index.faiss"
+    assert config.faiss_metadata_db_path == tmp_path / "faiss" / "meta.sqlite3"
     assert config.ovms_base_url == "http://127.0.0.1:9000"
     assert config.generation_model_name == "qwen3-llm-ov"
     assert config.ovms_autostart is False

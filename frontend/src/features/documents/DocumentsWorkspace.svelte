@@ -16,21 +16,21 @@
   let selectedDocument = null;
 
   let recollHealth = { status: "unknown", error: "" };
-  let redisHealth = { status: "unknown", error: "" };
+  let vectorHealth = { status: "unknown", error: "" };
   let ovmsHealth = { status: "unknown", error: "" };
 
   async function loadStatus() {
     statusError = "";
     try {
-      const [statusPayload, recollPayload, redisPayload, ovmsPayload] = await Promise.all([
+      const [statusPayload, recollPayload, vectorPayload, ovmsPayload] = await Promise.all([
         getJson("/api/documents/status"),
         getJson("/api/documents/health/recoll"),
-        getJson("/api/documents/health/redis"),
+        getJson("/api/documents/health/faiss"),
         getJson("/api/documents/health/ovms"),
       ]);
       sources = statusPayload.sources ?? [];
       recollHealth = summarizeHealth(recollPayload);
-      redisHealth = summarizeHealth(redisPayload);
+      vectorHealth = summarizeHealth(vectorPayload);
       ovmsHealth = summarizeHealth(ovmsPayload);
       if (ovmsPayload.setup_command) {
         ovmsHealth = { ...ovmsHealth, setupCommand: ovmsPayload.setup_command };
@@ -105,9 +105,9 @@
       {#if recollHealth.error}<p class="error">{recollHealth.error}</p>{/if}
     </article>
     <article>
-      <h3>Redis</h3>
-      <p>Status: {redisHealth.status}</p>
-      {#if redisHealth.error}<p class="error">{redisHealth.error}</p>{/if}
+      <h3>Vector Index (FAISS)</h3>
+      <p>Status: {vectorHealth.status}</p>
+      {#if vectorHealth.error}<p class="error">{vectorHealth.error}</p>{/if}
     </article>
     <article>
       <h3>OVMS</h3>

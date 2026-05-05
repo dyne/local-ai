@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from local_ai.slices.documents.adapters.faiss_vector_index import FaissVectorSearchIndex
 from local_ai.slices.documents.config import load_documents_config
 from local_ai.slices.documents.service_bundle import build_documents_service_bundle
 
@@ -27,3 +28,4 @@ def test_build_service_bundle(tmp_path: Path) -> None:
     assert bundle.status_service is not None
     assert bundle.add_source_service is not None
     assert bundle.index_documents_service is not None
+    assert isinstance(bundle.vector_index, FaissVectorSearchIndex)

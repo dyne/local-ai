@@ -156,7 +156,7 @@ def register_documents_routes(app: FastAPI, *, bundle: object, publish_log_event
             _LOG.warning("Documents OVMS health unavailable: %s", payload)
         return JSONResponse(payload)
 
-    @app.get("/api/documents/health/redis")
-    async def documents_redis_health() -> JSONResponse:
+    @app.get("/api/documents/health/faiss")
+    async def documents_faiss_health() -> JSONResponse:
         payload = bundle.vector_index.health()  # type: ignore[attr-defined]
         return JSONResponse(payload)
