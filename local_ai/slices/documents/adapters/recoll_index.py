@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -24,11 +25,13 @@ class RecollLexicalSearchIndex:
         recoll_bin_dir: Path,
         recoll_home_dir: Path,
         app_data_dir: Path,
+        recoll_data_dir: Path | None = None,
         runner: SubprocessCommandRunner | None = None,
     ) -> None:
         self._recoll_bin_dir = recoll_bin_dir
         self._recoll_home_dir = recoll_home_dir
         self._app_data_dir = app_data_dir
+        self._recoll_data_dir = recoll_data_dir
         self._runner = runner or SubprocessCommandRunner()
         self._sources: tuple[ArchiveSource, ...] = ()
 
@@ -73,11 +76,14 @@ class RecollLexicalSearchIndex:
         recollindex_path = self._recoll_bin_dir / "recollindex.exe"
         recollq_path = self._recoll_bin_dir / "recollq.exe"
         available = recollindex_path.exists() and recollq_path.exists()
+        recoll_data_dir, data_dir_error = self._resolve_recoll_data_dir()
         return {
-            "status": "ready" if available else "missing_binaries",
+            "status": "ready" if available and recoll_data_dir else ("missing_binaries" if not available else "missing_data_dir"),
             "recoll_home": str(self._recoll_home_dir),
             "recollindex_path": str(recollindex_path),
             "recollq_path": str(recollq_path),
+            "recoll_data_dir": str(recoll_data_dir) if recoll_data_dir else None,
+            "error": data_dir_error,
             "source_count": len(self._sources),
         }
 
@@ -86,10 +92,39 @@ class RecollLexicalSearchIndex:
         recollq_path = self._recoll_bin_dir / "recollq.exe"
         if not recollindex_path.exists() or not recollq_path.exists():
             raise RecollAdapterError("Recoll binaries are missing from configured recoll_bin_dir.")
+        recoll_data_dir, error = self._resolve_recoll_data_dir()
+        if recoll_data_dir is None:
+            raise RecollAdapterError(error or "Recoll data directory is missing.")
         return self._runner.run(
             command,
             cwd=self._recoll_home_dir,
             extra_path_entries=(self._recoll_bin_dir,),
+            extra_env={"RECOLL_DATADIR": str(recoll_data_dir)},
+        )
+
+    def _resolve_recoll_data_dir(self) -> tuple[Path | None, str | None]:
+        candidates: list[Path] = []
+        if self._recoll_data_dir is not None:
+            candidates.append(self._recoll_data_dir)
+        env_value = os.getenv("RECOLL_DATADIR")
+        env_dir = Path(env_value).expanduser() if env_value else None
+        if env_dir is not None:
+            candidates.append(env_dir)
+        candidates.extend(
+            [
+                self._recoll_bin_dir / "Share",
+                self._recoll_bin_dir / "share",
+                Path("C:/Program Files (x86)/Recoll/Share"),
+                Path("C:/Program Files/Recoll/Share"),
+            ]
+        )
+        for candidate in candidates:
+            backend = candidate / "examples" / "backends"
+            if backend.exists():
+                return candidate, None
+        return (
+            None,
+            "Recoll installation data not found. Install Recoll with Share/examples/backends or set RECOLL_DATADIR.",
         )
 
     def _safe_remove_recoll_home(self) -> None:

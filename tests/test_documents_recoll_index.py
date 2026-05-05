@@ -24,6 +24,8 @@ def _prepare_recoll_bin_dir(tmp_path: Path) -> Path:
     bin_dir.mkdir(parents=True)
     (bin_dir / "recollindex.exe").write_text("", encoding="utf-8")
     (bin_dir / "recollq.exe").write_text("", encoding="utf-8")
+    (bin_dir / "Share" / "examples").mkdir(parents=True)
+    (bin_dir / "Share" / "examples" / "backends").write_text("", encoding="utf-8")
     return bin_dir
 
 
@@ -104,3 +106,20 @@ def test_health_reports_binary_paths(tmp_path: Path) -> None:
     health = index.health()
     assert health["status"] == "ready"
     assert str(bin_dir / "recollindex.exe") == health["recollindex_path"]
+
+
+def test_health_reports_missing_data_dir(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "recoll"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "recollindex.exe").write_text("", encoding="utf-8")
+    (bin_dir / "recollq.exe").write_text("", encoding="utf-8")
+    runner = _FakeRunner(CommandResult(returncode=0, stdout="", stderr="", elapsed_ms=8))
+    index = RecollLexicalSearchIndex(
+        recoll_bin_dir=bin_dir,
+        recoll_home_dir=tmp_path / "home",
+        app_data_dir=tmp_path / "app-data",
+        runner=runner,  # type: ignore[arg-type]
+    )
+    health = index.health()
+    assert health["status"] == "missing_data_dir"
+    assert "Recoll installation data not found" in str(health["error"])
