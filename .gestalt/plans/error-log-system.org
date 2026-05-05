@@ -1,0 +1,221 @@
+#+TITLE: Error Log System
+#+SUBTITLE: Structured console and GUI logs with searchable history and error notifications
+#+DATE: 2026-05-05
+#+KEYWORDS: logging errors gui notifications svelte fastapi console observability
+
+* DONE [#A] Define A Shared Log Event Contract
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Replace ad hoc error strings with a small structured log event shape that can be printed to console, streamed to the GUI, searched, and shown as notifications.
+:Notes: Do not add a logging dependency. Use Python's standard `logging` concepts where useful, but keep the app-level contract explicit and small.
+:END:
+
+** DONE [#A] Inventory current log and error emission points
+:PROPERTIES:
+:Why: Logs currently come from `local_ai_voice.log`, direct `print(..., stderr)`, FastAPI/uvicorn, voice SSE strings, upload failures, document indexing status, and frontend-only errors. The new system should gather these paths without rewriting unrelated domain logic.
+:Change: Review `local_ai_voice.py`, `browser_webrtc.py`, `local_ai/slices/voice/web_ui/service.py`, `local_ai/slices/voice/web_ui/socket_loop.py`, `local_ai/slices/voice/web_ui/event_stream.py`, `local_ai/slices/documents/`, and `frontend/src/features/voice/VoiceTranscription.svelte`. List which paths should produce `INFO`, `WARNING`, or `ERROR`.
+:Tests: No tests needed unless files are changed.
+:Done when: The implementation work has a concrete map of existing log producers and no important error path is missed.
+:END:
+
+** DONE [#A] Add a minimal app log event domain model
+:PROPERTIES:
+:Why: The GUI needs structured fields for severity, time, source, message, details, and search/filter behavior. Plain transcript strings cannot support that cleanly.
+:Change: Add a small module such as `local_ai/shared/domain/log_events.py` with `LogLevel`, `LogEvent`, and helper constructors. Include fields: `id`, `timestamp`, `level`, `source`, `message`, optional `details`, optional `context`, and optional `notification`. Keep it serializable to JSON without custom encoders.
+:Tests: Add unit tests for serialization, default timestamp/id behavior if generated, and level normalization.
+:Done when: Backend code can create app log events without importing voice or frontend modules.
+:END:
+
+** DONE [#B] Define frontend log event parsing and fallback behavior
+:PROPERTIES:
+:Why: The browser may receive structured log events from new endpoints and still receive legacy text while the migration is incremental.
+:Change: Add `frontend/src/lib/log-events.js` with parser helpers that accept structured events and convert legacy text into `INFO`/`ERROR` events when it starts with known prefixes like `[server error]` or `[error]`.
+:Tests: Add Vitest coverage for structured events, malformed events, legacy server errors, and search text extraction.
+:Done when: The frontend has one stable event shape for log UI and notification logic.
+:END:
+
+* WIP [#A] Add Backend Log Bus And Console Adapter
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Centralize application log publication while preserving console output.
+:Notes: Keep this in-process. A durable log database is out of scope for the first version unless required later.
+:END:
+
+** DONE [#A] Implement an in-memory bounded log bus
+:PROPERTIES:
+:Why: The GUI needs recent logs after page reload and live updates while the app is running. A bounded in-memory bus is sufficient for a local desktop/server app and avoids premature persistence.
+:Change: Add `local_ai/shared/logging/log_bus.py` or similar with methods to publish events, get recent events, and subscribe via async queues. Use a bounded deque for recent history and bounded queues for subscribers. Drop oldest events when full.
+:Tests: Add pytest coverage for publish, ordering, bounded history trimming, subscriber delivery, subscriber cleanup, and queue overflow behavior.
+:Done when: Backend routes and services can publish logs and read recent log history through one object.
+:END:
+
+** TODO [#A] Add console logging adapter using the same events
+:PROPERTIES:
+:Why: The requirement says logs should be shown on console as well as the GUI. Console output should not depend on `--verbose` for `ERROR`, while debug/info verbosity can still be controlled.
+:Change: Add an adapter that formats `LogEvent` to stderr/stdout with timestamp, level, source, and message. Wire it into the log bus. Keep concise formatting; include details only when present or verbose.
+:Tests: Add tests with `io.StringIO` or capsys to verify `ERROR` always prints, normal `INFO` respects verbosity if that remains desired, and formatting is readable.
+:Done when: New app logs appear in console and existing concise diagnostic behavior is preserved.
+:END:
+
+** TODO [#B] Bridge existing logger callback into the log bus
+:PROPERTIES:
+:Why: Many existing functions accept `logger(message, verbose, start)` and changing all signatures at once would be high churn.
+:Change: Keep the callback interface for now, but implement it as a thin bridge that publishes `LogEvent(level="INFO", source="voice", message=...)` to the bus and console adapter. Add explicit helpers for warning/error where current code emits direct error strings.
+:Tests: Update or add tests for `local_ai_voice.log` and browser server startup logging.
+:Done when: Existing services can continue using the old callback while logs flow into the new system.
+:END:
+
+* WIP [#A] Expose Logs To The Browser
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Let the Svelte app fetch recent logs and receive live log events independently from transcript streams.
+:Notes: Do not overload voice transcript SSE with app logs. Logs are cross-role app shell data.
+:END:
+
+** DONE [#A] Add app-level log history endpoint
+:PROPERTIES:
+:Why: The GUI log section should show recent logs when opened or after refresh, not only future messages.
+:Change: Add an app-shell route such as `GET /api/app/logs?limit=200&level=...&q=...`. Implement filtering on the backend only for simple level/source/query fields; keep advanced search in the frontend. Register this outside the voice session routes.
+:Tests: Add FastAPI tests for default history, limit clamping, level filtering, and empty history.
+:Done when: The frontend can load recent logs without creating a voice session.
+:END:
+
+** DONE [#A] Add app-level log event stream
+:PROPERTIES:
+:Why: The log panel and error notifications need live updates as the app runs.
+:Change: Add `GET /api/app/logs/events` as an SSE endpoint that subscribes to the log bus and sends JSON log events. Include keepalive pings like the current voice event stream.
+:Tests: Add async tests for event formatting, keepalive behavior, subscriber cleanup on cancellation, and ERROR event delivery.
+:Done when: The browser can receive live logs without mixing them into transcript output.
+:END:
+
+** TODO [#B] Publish structured events for current voice web errors
+:PROPERTIES:
+:Why: Current voice errors are emitted as strings like `[server error] Audio stream failed: ...`. These should appear in both transcript context and the global log/notification system.
+:Change: Update voice upload failures, websocket stream exceptions, invalid chunk configuration, inference errors, and session cleanup failures to publish `ERROR` log events. Keep transcript-facing messages where they are useful, but do not make transcript output the only error surface.
+:Tests: Update focused voice web tests to assert an error event is published when audio stream processing fails and when upload transcription fails.
+:Done when: Voice runtime/server errors show up in the log bus and still remain understandable in the voice workflow.
+:END:
+
+* TODO [#A] Build Searchable GUI Log Section
+:PROPERTIES:
+:Effort: 1.5 days
+:Goal: Add a GUI section that displays logs, supports search/filtering, and stays useful without overwhelming the main workflow.
+:Notes: Use Svelte components and local state. Do not add UI dependencies. Keep the interface dense and operational, not a marketing page.
+:END:
+
+** TODO [#A] Add frontend log store and API client
+:PROPERTIES:
+:Why: Multiple components need access to recent logs and live updates: the log panel and error notifications at minimum.
+:Change: Add `frontend/src/lib/log-store.js` or `frontend/src/features/logs/` with functions to fetch `/api/app/logs`, open `/api/app/logs/events`, merge events by id, cap history, and expose search/filter helpers.
+:Tests: Add Vitest coverage for merge-by-id, history cap, level filtering, source filtering, and query matching across message/details/context.
+:Done when: Frontend logging state is reusable outside one component.
+:END:
+
+** TODO [#A] Add a searchable log panel to the app shell
+:PROPERTIES:
+:Why: Logs should be visible in a dedicated GUI section, not hidden inside the voice transcript.
+:Change: Add `frontend/src/features/logs/LogPanel.svelte` and mount it in the app shell as a persistent section or tab. Include search input, level filter, source filter, clear-view button, auto-scroll toggle, and copy-log-entry action. Use stable dimensions so the panel does not shift layout unexpectedly.
+:Tests: Run Vitest for helpers and Vite build. If browser tooling is available, inspect desktop/mobile layouts for overlap and readable log rows.
+:Done when: Users can open the GUI log section, search logs, filter errors, and inspect details without affecting active voice/document workflows.
+:END:
+
+** TODO [#B] Preserve transcript and role-specific output separation
+:PROPERTIES:
+:Why: Voice transcripts are user output, while logs are operational diagnostics. Mixing them makes search and export behavior confusing.
+:Change: Stop appending generic debug/error logs directly to transcript output except for voice-specific status messages that are part of the workflow. Route operational messages into the log panel and show only user-facing transcript/upload results in voice output.
+:Tests: Update frontend tests or manual checks to ensure upload transcript results still appear in voice history and server errors appear in logs/notifications.
+:Done when: Transcript output remains clean and operational logs are searchable in the log section.
+:END:
+
+* TODO [#A] Add ERROR Notifications
+:PROPERTIES:
+:Effort: 0.75 day
+:Goal: Surface ERROR events immediately as GUI notifications without requiring the user to watch the log panel.
+:Notes: Use in-app notifications first. Native OS notifications can be a later optional adapter because browser permission prompts add complexity.
+:END:
+
+** TODO [#A] Implement in-app notification component for ERROR logs
+:PROPERTIES:
+:Why: The requirement says ERRORs should appear as notification. An in-app toast/banner works in desktop webview, browser dev mode, and server mode without extra permissions.
+:Change: Add `frontend/src/features/logs/ErrorNotifications.svelte` that subscribes to the log store and shows new `ERROR` events. Include source, message, timestamp, dismiss button, and a button/link to open the log panel filtered to that event or to errors.
+:Tests: Add Vitest tests for notification selection logic if extracted. Run Vite build.
+:Done when: New ERROR log events create visible notifications in the GUI.
+:END:
+
+** TODO [#B] Add deduplication and notification throttling
+:PROPERTIES:
+:Why: A repeated stream or model error could produce many identical events and make the GUI unusable.
+:Change: Deduplicate notifications by message/source within a short time window, show a count for repeated errors, and cap visible notifications. Keep all events in the log history even when notifications are collapsed.
+:Tests: Add helper tests for deduplication window, count incrementing, and cap behavior.
+:Done when: Repeated ERRORs remain visible without flooding the interface.
+:END:
+
+** TODO [#C] Consider optional native notification bridge later
+:PROPERTIES:
+:Why: Native desktop notifications may be useful in pywebview, but they are not required for a first maintainable implementation and may differ by platform.
+:Change: Do not implement native notifications in the first pass. Leave a follow-up note only if the in-app notification architecture has a clean adapter point.
+:Tests: No tests needed.
+:Done when: The plan does not block on native notification permissions or platform-specific APIs.
+:END:
+
+* TODO [#B] Integrate Documents And Future Roles
+:PROPERTIES:
+:Effort: 0.75 day
+:Goal: Make logs app-wide so documents, OCR, and future roles can publish diagnostics consistently.
+:Notes: Keep VSA boundaries: role slices publish events; the app shell owns display and transport.
+:END:
+
+** TODO [#B] Add log publishing points to document indexing and query flows
+:PROPERTIES:
+:Why: Document navigation and RAG/indexing can fail in subprocesses, OVMS calls, SQLite operations, and file decoding. Those failures should be visible in the same GUI log system.
+:Change: Add log events around document index start/success/failure, Recoll command failures, OVMS health/model errors, and query generation failures. Preserve existing response error fields.
+:Tests: Add or update document slice tests to assert ERROR events are published for failed adapter calls without changing API response contracts.
+:Done when: Document-related errors appear in console, log panel, and ERROR notifications.
+:END:
+
+** TODO [#C] Define source naming conventions for role logs
+:PROPERTIES:
+:Why: Search/filtering is only useful if sources are stable and predictable.
+:Change: Use source names such as `app`, `voice.live`, `voice.upload`, `voice.runtime`, `documents.index`, `documents.query`, `ocr`. Document this in `AGENTS.md` after implementation.
+:Tests: Add tests for role-specific source strings only where helpers normalize them.
+:Done when: Logs can be filtered by source consistently across roles.
+:END:
+
+* TODO [#A] Validate And Document The Logging Workflow
+:PROPERTIES:
+:Effort: 0.75 day
+:Goal: Prove logs reach console, GUI history, live GUI updates, and notifications without breaking current workflows.
+:Notes: Follow the repo workflow: focused tests after code changes, conventional commits per L2 when implementing, and full validation at L1 completion.
+:END:
+
+** TODO [#A] Run focused backend logging tests
+:PROPERTIES:
+:Why: The log bus and SSE endpoints are shared infrastructure and need strong regression coverage.
+:Change: Run pytest for new log bus tests, app-shell log route tests, voice web error tests, and document logging tests if added.
+:Tests: `py -3.11 -m pytest tests/test_log_bus.py tests/test_app_log_routes.py tests/test_browser_event_stream.py` plus changed voice/document tests.
+:Done when: Backend logging tests pass.
+:END:
+
+** TODO [#A] Run focused frontend logging tests and build
+:PROPERTIES:
+:Why: The log panel, search helpers, and notifications become part of the main app shell.
+:Change: Run frontend tests and production build.
+:Tests: `cd frontend && npm test`; `cd frontend && npm run build`.
+:Done when: Frontend tests and Vite build pass.
+:END:
+
+** TODO [#B] Manual browser smoke test
+:PROPERTIES:
+:Why: Notifications, live SSE updates, search, and layout need a real browser check.
+:Change: Start dev mode, trigger at least one INFO log and one ERROR log from voice upload/live flow, confirm console output, log panel history, log search, and ERROR notification behavior. Test mobile width for panel usability.
+:Tests: Browser smoke test using localhost dev server.
+:Done when: A reviewer can reproduce console logs, searchable GUI logs, and ERROR notifications.
+:END:
+
+** TODO [#C] Update `AGENTS.md` with logging guidance
+:PROPERTIES:
+:Why: Future slices need to publish logs consistently instead of adding direct prints or transcript-only error strings.
+:Change: Add a concise note explaining the log event contract, source naming, console adapter, GUI log panel, and when to use ERROR notifications.
+:Tests: No tests needed for documentation-only changes.
+:Done when: Future contributors know where and how to add logs.
+:END:
