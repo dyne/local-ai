@@ -43,6 +43,7 @@ class DocumentsConfig:
     ovms_base_url: str
     ovms_config_path: Path
     ovms_setupvars_path: Path
+    ovms_autostart: bool
     embedding_model_name: str
     generation_model_name: str | None
     default_max_documents: int = 20
@@ -82,6 +83,7 @@ def load_documents_config(repo_root: Path | None = None) -> DocumentsConfig:
         ovms_base_url=_env("LOCAL_AI_DOCUMENTS_OVMS_URL", "http://127.0.0.1:8080"),
         ovms_config_path=ovms_config_path,
         ovms_setupvars_path=ovms_setupvars_path,
+        ovms_autostart=_env("LOCAL_AI_DOCUMENTS_OVMS_AUTOSTART", "1").strip().lower() not in {"0", "false", "no"},
         embedding_model_name=_env("LOCAL_AI_DOCUMENTS_EMBEDDING_MODEL", "qwen3-embed-ov"),
         generation_model_name=generation_model if generation_model else None,
     )

@@ -179,3 +179,30 @@ def test_build_browser_app_registers_extra_routes_callback() -> None:
     assert called["value"] is True
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+def test_build_browser_app_runs_startup_and_shutdown_hooks() -> None:
+    state = {"started": 0, "stopped": 0}
+
+    def on_startup() -> None:
+        state["started"] += 1
+
+    def on_shutdown() -> None:
+        state["stopped"] += 1
+
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=lambda payload: None,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+        startup_hook=on_startup,
+        shutdown_hook=on_shutdown,
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+
+    assert state["started"] == 1
+    assert state["stopped"] == 1

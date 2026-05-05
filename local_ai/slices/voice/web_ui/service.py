@@ -28,6 +28,7 @@ from local_ai.slices.voice.web_ui.session_state import DEFAULT_AUDIO_BITRATE, Se
 from local_ai.slices.voice.web_ui.socket_loop import handle_audio_socket_connection
 from local_ai.slices.app_shell.role_catalog import role_catalog_response
 from local_ai.slices.documents.service_bundle import build_documents_service_bundle
+from local_ai.slices.documents.adapters.ovms_lifecycle import OvmsProcessManager
 from local_ai.slices.documents.web import register_documents_routes
 from local_ai.slices.voice.transcribe_uploaded_media.request import TranscribeUploadedMediaRequest
 from local_ai.slices.voice.transcribe_uploaded_media.service import (
@@ -135,6 +136,12 @@ class AudioStreamService:
 
     def build_app(self) -> FastAPI:
         documents_bundle = build_documents_service_bundle()
+        ovms_manager = OvmsProcessManager(
+            base_url=documents_bundle.config.ovms_base_url,
+            setupvars_path=documents_bundle.config.ovms_setupvars_path,
+            config_path=documents_bundle.config.ovms_config_path,
+            autostart=documents_bundle.config.ovms_autostart,
+        )
 
         async def app_roles() -> JSONResponse:
             return JSONResponse(role_catalog_response())
@@ -206,6 +213,8 @@ class AudioStreamService:
             app_roles_handler=app_roles,
             upload_transcription_handler=upload_transcription,
             register_extra_routes=lambda app: register_documents_routes(app, bundle=documents_bundle),
+            startup_hook=ovms_manager.startup,
+            shutdown_hook=ovms_manager.shutdown,
         )
 
     async def _create_session(self, payload: SessionConfig) -> JSONResponse:
