@@ -1,14 +1,42 @@
 <script>
-  import { onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
 
   import AppShell from "./components/AppShell.svelte";
   import DocumentsWorkspace from "./features/documents/DocumentsWorkspace.svelte";
+  import ErrorNotifications from "./features/logs/ErrorNotifications.svelte";
+  import LogPanel from "./features/logs/LogPanel.svelte";
+  import { createLogStore } from "./features/logs/log-store";
+  import { upsertErrorNotification } from "./features/logs/notifications";
   import VoiceTranscription from "./features/voice/VoiceTranscription.svelte";
   import { fallbackRoles, parseRolesResponse } from "./lib/roles";
 
   let roles = fallbackRoles();
   let activeRoleId = "voice";
   $: activeRole = roles.find((item) => item.id === activeRoleId);
+
+  const logStore = createLogStore({ maxHistory: 500 });
+  let allLogs = [];
+  let visibleLogs = [];
+  let logLevel = "";
+  let logSource = "";
+  let logQuery = "";
+  let autoScrollLogs = true;
+  let notifications = [];
+
+  $: visibleLogs = logStore.filterEvents({ level: logLevel, source: logSource, query: logQuery });
+  $: logSources = [...new Set(allLogs.map((item) => item.source))].sort();
+
+  function selectRole(roleId) {
+    activeRoleId = roleId;
+  }
+
+  function dismissNotification(key) {
+    notifications = notifications.filter((item) => item.key !== key);
+  }
+
+  function pushNotification(event) {
+    notifications = upsertErrorNotification(notifications, event, { maxVisible: 4 });
+  }
 
   async function loadRoles() {
     try {
@@ -26,12 +54,31 @@
     }
   }
 
-  function selectRole(roleId) {
-    activeRoleId = roleId;
-  }
+  let unsubscribe = () => {};
+  let closeLive = () => {};
 
   onMount(() => {
+    unsubscribe = logStore.subscribe(async (events) => {
+      const newest = events[events.length - 1];
+      allLogs = events;
+      if (newest) {
+        pushNotification(newest);
+      }
+      if (autoScrollLogs) {
+        await tick();
+        const rows = document.querySelector(".log-panel .rows");
+        rows?.scrollTo({ top: rows.scrollHeight });
+      }
+    });
+
     void loadRoles();
+    void logStore.loadHistory().catch(() => {});
+    closeLive = logStore.connectLive();
+  });
+
+  onDestroy(() => {
+    unsubscribe();
+    closeLive();
   });
 </script>
 
@@ -53,15 +100,30 @@
         <p class="state">Status: {activeRole?.status ?? "planned"}</p>
       </section>
     {/if}
+
+    <LogPanel
+      events={visibleLogs}
+      level={logLevel}
+      source={logSource}
+      query={logQuery}
+      autoScroll={autoScrollLogs}
+      sources={logSources}
+      onLevelChange={(value) => (logLevel = value)}
+      onSourceChange={(value) => (logSource = value)}
+      onQueryChange={(value) => (logQuery = value)}
+      onClearView={() => logStore.clearView()}
+      onToggleAutoScroll={(value) => (autoScrollLogs = value)}
+    />
   </AppShell>
+
+  <ErrorNotifications {notifications} onDismiss={dismissNotification} />
 </div>
 
 <style>
   :global(body) {
     margin: 0;
     font-family: "Segoe UI", sans-serif;
-    background:
-      linear-gradient(135deg, #eef7fb 0%, #f7f2e8 42%, #e9edf5 100%);
+    background: linear-gradient(135deg, #eef7fb 0%, #f7f2e8 42%, #e9edf5 100%);
     color: #1e2330;
   }
 
