@@ -49,6 +49,7 @@ async def test_process_audio_message_returns_unchanged_buffer_when_decode_not_re
 async def test_process_audio_message_returns_cleanup_on_invalid_chunk_configuration() -> None:
     session = make_session()
     cleaned: list[str] = []
+    published: list[tuple[str, list[str] | None]] = []
 
     async def cleanup(session: SessionState) -> None:
         cleaned.append(session.session_id)
@@ -75,10 +76,12 @@ async def test_process_audio_message_returns_cleanup_on_invalid_chunk_configurat
         )(),
         process_prepared_chunks_fn=lambda **kwargs: None,
         cleanup_session_fn=cleanup,
+        publish_error_fn=lambda reason, details: published.append((reason, details)),
     )
 
     assert cleaned == ["abc"]
     assert await session.queue.get() == "[server error] Invalid chunk configuration."
+    assert published == [("Invalid chunk configuration.", ["Invalid chunk configuration."])]
     assert result.stop is True
 
 

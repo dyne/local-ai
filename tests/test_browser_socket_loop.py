@@ -113,6 +113,7 @@ async def test_handle_audio_socket_connection_reports_stream_error() -> None:
     session = make_session()
     websocket = FakeWebSocket([{"bytes": b"abc"}, RuntimeError("boom")])
     cleanup_calls: list[str] = []
+    published: list[tuple[str, list[str] | None]] = []
 
     async def cleanup_session_fn(current: SessionState) -> None:
         cleanup_calls.append(current.session_id)
@@ -128,7 +129,9 @@ async def test_handle_audio_socket_connection_reports_stream_error() -> None:
         debug_fn=lambda session, message: asyncio.sleep(0),
         process_message_fn=process_message_fn,
         websocket_disconnect_type=FakeDisconnect,
+        publish_error_fn=lambda reason, details: published.append((reason, details)),
     )
 
     assert cleanup_calls == ["abc"]
     assert await session.queue.get() == "[server error] Audio stream failed: boom"
+    assert published == [("Audio stream failed.", ["boom"])]

@@ -17,6 +17,7 @@ async def handle_audio_socket_connection(
     debug_fn: Callable[[object, str], Awaitable[None]],
     process_message_fn: Callable[..., Awaitable[MessageProcessingResult]],
     websocket_disconnect_type: type[BaseException],
+    publish_error_fn: Callable[[str, list[str] | None], None] | None = None,
 ) -> None:
     session = sessions.get(session_id)
     if await close_unknown_session(session, websocket):
@@ -50,6 +51,8 @@ async def handle_audio_socket_connection(
     except websocket_disconnect_type:
         pass
     except Exception as exc:
+        if publish_error_fn is not None:
+            publish_error_fn("Audio stream failed.", [str(exc)])
         try:
             await session.queue.put(f"[server error] Audio stream failed: {exc}")
         except Exception:
