@@ -13,6 +13,7 @@
   import PushToTalkPanel from "./components/PushToTalkPanel.svelte";
   import TranscriptOutput from "./components/TranscriptOutput.svelte";
   import VoiceSettings from "./components/VoiceSettings.svelte";
+  import { shouldDisplayTranscriptLine } from "./transcript-lines";
 
   const runtimeConfig = readRuntimeConfig(window);
 
@@ -97,7 +98,11 @@
         throw new Error(`Session setup failed: ${await response.text()}`);
       }
       eventSource = new EventSource(`/events/${sessionId}`);
-      eventSource.onmessage = (event) => appendLine(event.data);
+      eventSource.onmessage = (event) => {
+        if (shouldDisplayTranscriptLine(event.data)) {
+          appendLine(event.data);
+        }
+      };
       eventSource.onerror = () => (status = "error");
 
       audioSocket = new WebSocket(`${wsBaseUrl()}/audio/${sessionId}`);
@@ -123,7 +128,6 @@
       status = "recording";
     } catch (error) {
       status = "error";
-      appendLine(`[error] ${String(error?.message || error)}`);
       await stop();
       status = "error";
     }
