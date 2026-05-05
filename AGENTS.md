@@ -146,7 +146,7 @@ This is intentionally concrete. The repository is voice-first today, with archit
 ### Documents
 
 - stage 1 retrieval is lexical via bundled `recoll/recollindex.exe` and `recoll/recollq.exe`
-- stage 2 refinement is semantic and candidate-scoped only; it uses Redis vector search through the documents vector index adapter
+- stage 2 refinement is semantic and candidate-scoped only; it uses local FAISS vector search through the documents vector index adapter
 - embedding and optional answer generation run through local OVMS HTTP endpoints
 - canonical OVMS startup:
   - `cd C:\Users\denis\devel\local-ai\llm`
@@ -161,7 +161,7 @@ This is intentionally concrete. The repository is voice-first today, with archit
   - `POST /api/documents/query`
   - `GET /api/documents/{document_id}`
   - `GET /api/documents/health/recoll`
-  - `GET /api/documents/health/redis`
+  - `GET /api/documents/health/faiss`
   - `GET /api/documents/health/ovms`
 - documents CLI shell:
   - `py -3.11 .\local-ai-documents.py add-source <path>`

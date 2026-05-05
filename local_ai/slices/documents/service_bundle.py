@@ -7,7 +7,7 @@ from local_ai.slices.documents.adapters.ovms_client import OvmsClient
 from local_ai.slices.documents.adapters.ovms_embeddings import OvmsEmbeddingModel
 from local_ai.slices.documents.adapters.ovms_generator import OvmsTextGenerator
 from local_ai.slices.documents.adapters.recoll_index import RecollLexicalSearchIndex
-from local_ai.slices.documents.adapters.redis_vector_index import RedisVectorSearchIndex
+from local_ai.slices.documents.adapters.faiss_vector_index import FaissVectorSearchIndex
 from local_ai.slices.documents.adapters.sqlite_repository import SqliteDocumentsRepository
 from local_ai.slices.documents.config import DocumentsConfig, load_documents_config
 from local_ai.slices.documents.index_source.service import AddSourceService, IndexDocumentsService
@@ -29,7 +29,7 @@ class DocumentsServiceBundle:
     embedding_model: OvmsEmbeddingModel
     text_generator: OvmsTextGenerator | None
     splitter: DeterministicPassageSplitter
-    vector_index: RedisVectorSearchIndex
+    vector_index: FaissVectorSearchIndex
     refine_candidates_service: RefineCandidatesService
     query_documents_service: QueryDocumentsService
     status_service: DocumentsStatusService
@@ -50,9 +50,9 @@ def build_documents_service_bundle(config: DocumentsConfig | None = None) -> Doc
     )
     text_loader = CandidateTextLoader()
     splitter = DeterministicPassageSplitter()
-    vector_index = RedisVectorSearchIndex(
-        redis_url=resolved_config.redis_url,
-        index_name=resolved_config.redis_index_name,
+    vector_index = FaissVectorSearchIndex(
+        index_path=resolved_config.faiss_index_path,
+        metadata_db_path=resolved_config.faiss_metadata_db_path,
     )
     setup_command = (
         "cd C:\\Users\\denis\\devel\\local-ai\\llm; "

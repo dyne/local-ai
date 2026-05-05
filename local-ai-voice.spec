@@ -5,16 +5,18 @@ from PyInstaller.utils.hooks import collect_submodules
 
 datas = [('frontend/dist', 'frontend/dist'), ('web/index.html', 'web')]
 binaries = []
-hiddenimports = ['browser_webrtc', 'av', 'noisereduce', 'webrtcvad', 'uvicorn', 'webview', 'hf_xet']
+hiddenimports = ['browser_webrtc', 'av', 'noisereduce', 'webrtcvad', 'uvicorn', 'webview', 'hf_xet', 'faiss']
 datas += collect_data_files('openvino')
 datas += collect_data_files('openvino_genai')
 datas += collect_data_files('openvino_tokenizers')
 datas += collect_data_files('webview')
 datas += collect_data_files('hf_xet')
+datas += collect_data_files('faiss')
 binaries += collect_dynamic_libs('openvino')
 binaries += collect_dynamic_libs('openvino_genai')
 binaries += collect_dynamic_libs('openvino_tokenizers')
 binaries += collect_dynamic_libs('hf_xet')
+binaries += collect_dynamic_libs('faiss')
 hiddenimports += collect_submodules('uvicorn')
 hiddenimports += collect_submodules('websockets')
 

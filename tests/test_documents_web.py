@@ -14,8 +14,8 @@ from local_ai.slices.documents.web import register_documents_routes
 class _Config:
     embedding_model_name: str = "qwen3-embed-ov"
     generation_model_name: str | None = None
-    redis_url: str = "redis://localhost:6379"
-    redis_index_name: str = "local-ai-documents"
+    faiss_index_path: str = "C:\\vector\\index.faiss"
+    faiss_metadata_db_path: str = "C:\\vector\\meta.sqlite3"
 
 
 class _StatusService:
@@ -174,8 +174,8 @@ def test_health_endpoints() -> None:
     client = _client()
     assert client.get("/api/documents/health/recoll").status_code == 200
     assert client.get("/api/documents/health/ovms").status_code == 200
-    redis_payload = client.get("/api/documents/health/redis").json()
-    assert redis_payload["status"] == "ready"
+    faiss_payload = client.get("/api/documents/health/faiss").json()
+    assert faiss_payload["status"] == "ready"
 
 
 def test_query_endpoint() -> None:

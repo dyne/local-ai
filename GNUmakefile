@@ -21,7 +21,7 @@ PIP := $(PYTHON) -m pip
 SCRIPT := local-ai-voice.py
 APP_NAME := local-ai-voice
 SPEC := $(APP_NAME).spec
-REQUIREMENTS := numpy noisereduce webrtcvad-wheels sounddevice fastapi uvicorn websockets pydantic av pywebview huggingface_hub[hf_xet]
+REQUIREMENTS := numpy faiss-cpu noisereduce webrtcvad-wheels sounddevice fastapi uvicorn websockets pydantic av pywebview huggingface_hub[hf_xet]
 OPENVINO_PACKAGES := openvino openvino-genai openvino-tokenizers
 NPM ?= npm
 FRONTEND_DIR := frontend
@@ -74,6 +74,7 @@ spec: install-build frontend-build
 		--hidden-import uvicorn \
 		--hidden-import webview \
 		--hidden-import hf_xet \
+		--hidden-import faiss \
 		--collect-submodules uvicorn \
 		--collect-submodules websockets \
 		--additional-hooks-dir hooks \
@@ -86,6 +87,8 @@ spec: install-build frontend-build
 		--collect-data webview \
 		--collect-binaries hf_xet \
 		--collect-data hf_xet \
+		--collect-binaries faiss \
+		--collect-data faiss \
 		--add-data "$(FRONTEND_DIR)/dist$(DATA_SEP)$(FRONTEND_DIR)/dist" \
 		--add-data "web/index.html$(DATA_SEP)web" \
 		$(SCRIPT)
