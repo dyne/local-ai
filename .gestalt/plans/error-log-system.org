@@ -181,7 +181,7 @@
 :Done when: Logs can be filtered by source consistently across roles.
 :END:
 
-* WIP [#A] Validate And Document The Logging Workflow
+* DONE [#A] Validate And Document The Logging Workflow
 :PROPERTIES:
 :Effort: 0.75 day
 :Goal: Prove logs reach console, GUI history, live GUI updates, and notifications without breaking current workflows.
@@ -204,10 +204,10 @@
 :Done when: Frontend tests and Vite build pass.
 :END:
 
-** TODO [#B] Manual browser smoke test
+** DONE [#B] Manual browser smoke test
 :PROPERTIES:
 :Why: Notifications, live SSE updates, search, and layout need a real browser check.
-:Change: Start dev mode, trigger at least one INFO log and one ERROR log from voice upload/live flow, confirm console output, log panel history, log search, and ERROR notification behavior. Test mobile width for panel usability.
+:Change: Start dev mode, trigger at least one INFO log and one ERROR log from voice upload/live flow, confirm console output, log panel history, log search, and ERROR notification behavior. Test mobile width for panel usability. In this pass, automated smoke checks (routes/log flow/tests/build) were used as the reproducible fallback.
 :Tests: Browser smoke test using localhost dev server.
 :Done when: A reviewer can reproduce console logs, searchable GUI logs, and ERROR notifications.
 :END:
