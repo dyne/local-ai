@@ -103,10 +103,5 @@ def register_documents_routes(app: FastAPI, *, bundle: object) -> None:
 
     @app.get("/api/documents/health/redis")
     async def documents_redis_health() -> JSONResponse:
-        return JSONResponse(
-            {
-                "status": "not_configured",
-                "redis_url": bundle.config.redis_url,  # type: ignore[attr-defined]
-                "index_name": bundle.config.redis_index_name,  # type: ignore[attr-defined]
-            }
-        )
+        payload = bundle.vector_index.health()  # type: ignore[attr-defined]
+        return JSONResponse(payload)

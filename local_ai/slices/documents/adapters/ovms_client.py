@@ -23,7 +23,6 @@ class OvmsClient:
         config_path: Path,
         setup_command: str,
         embedding_model_name: str = "qwen3-embed-ov",
-        embedding_dimension: int = 1024,
         timeout_seconds: int = 3,
         http_get_fn: object | None = None,
     ) -> None:
@@ -31,17 +30,12 @@ class OvmsClient:
         self._config_path = config_path
         self._setup_command = setup_command
         self._embedding_model_name = embedding_model_name
-        self._embedding_dimension = embedding_dimension
         self._timeout_seconds = timeout_seconds
         self._http_get_fn = http_get_fn or _default_http_get
 
     @property
     def model_id(self) -> str:
         return self._embedding_model_name
-
-    @property
-    def dimension(self) -> int:
-        return self._embedding_dimension
 
     def list_configured_models_from_file(self) -> tuple[str, ...]:
         if not self._config_path.exists():
@@ -79,28 +73,3 @@ class OvmsClient:
             details["status"] = "error"
             details["error"] = str(exc)
         return details
-
-    def embed_query(self, query: str) -> tuple[float, ...]:
-        """Return deterministic placeholder embeddings until OVMS infer API is wired."""
-
-        return _embed_text(query, dimension=self._embedding_dimension)
-
-    def embed_passages(self, passages: tuple[object, ...]) -> tuple[tuple[float, ...], ...]:
-        vectors = []
-        for passage in passages:
-            text = getattr(passage, "text", "")
-            vectors.append(_embed_text(text, dimension=self._embedding_dimension))
-        return tuple(vectors)
-
-
-def _embed_text(text: str, *, dimension: int) -> tuple[float, ...]:
-    values = [0.0] * dimension
-    if not text:
-        return tuple(values)
-    encoded = text.encode("utf-8")
-    for idx, value in enumerate(encoded):
-        values[idx % dimension] += float(value) / 255.0
-    norm = sum(item * item for item in values) ** 0.5
-    if norm == 0:
-        return tuple(values)
-    return tuple(item / norm for item in values)
