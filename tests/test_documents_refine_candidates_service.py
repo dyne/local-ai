@@ -35,9 +35,15 @@ class _Embedding:
 
 
 class _VectorIndex:
+    def __init__(self) -> None:
+        self.deleted = None
+
     def ensure_index(self, *, dimension, model_id):
         self.dimension = dimension
         self.model_id = model_id
+
+    def delete_stale(self, *, document_ids, current_text_hashes):
+        self.deleted = (document_ids, current_text_hashes)
 
     def upsert_passages(self, passages, vectors):
         self.passages = passages
@@ -59,11 +65,12 @@ class _VectorIndex:
 
 
 def test_refine_candidates_happy_path() -> None:
+    vector = _VectorIndex()
     service = RefineCandidatesService(
         text_loader=_TextLoader(),
         splitter=_Splitter(),
         embedding_model=_Embedding(),
-        vector_index=_VectorIndex(),
+        vector_index=vector,
     )
     candidate = SearchCandidate(
         document_id="doc-1",
@@ -74,3 +81,4 @@ def test_refine_candidates_happy_path() -> None:
     )
     result = service.execute(query="hello", candidates=(candidate,), max_passages=3, semantic_mode="required")
     assert len(result.evidence) == 1
+    assert vector.deleted is not None

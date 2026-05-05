@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 
 from local_ai.slices.documents.domain import EvidencePassage, SearchCandidate
 
@@ -38,6 +39,15 @@ class RefineCandidatesService:
             passages.extend(split)
         if not passages:
             return RefineCandidatesResult(evidence=(), warnings=tuple(warnings))
+        current_text_hashes = {
+            passage.passage_id: hashlib.sha256(passage.text.encode("utf-8")).hexdigest()
+            for passage in passages
+        }
+        if hasattr(self._vector_index, "delete_stale"):
+            self._vector_index.delete_stale(
+                document_ids=tuple(candidate.document_id for candidate in candidates),
+                current_text_hashes=current_text_hashes,
+            )
         passage_vectors = tuple(tuple(vector) for vector in self._embedding_model.embed_passages(tuple(passages)))
         self._vector_index.ensure_index(
             dimension=self._embedding_model.dimension,

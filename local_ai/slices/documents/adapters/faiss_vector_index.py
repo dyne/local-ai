@@ -143,6 +143,40 @@ class FaissVectorSearchIndex:
 
             return tuple(results[:limit])
 
+    def delete_stale(self, *, document_ids: tuple[str, ...], current_text_hashes: dict[str, str]) -> None:
+        """Delete stale vectors for candidate documents and rebuild FAISS index."""
+
+        if not document_ids:
+            return
+        with self._lock:
+            if self._index is None:
+                return
+            conn = self._connect()
+            try:
+                placeholders = ",".join("?" for _ in document_ids)
+                rows = conn.execute(
+                    f"SELECT vector_id, passage_id, text_hash FROM vector_metadata WHERE document_id IN ({placeholders})",
+                    tuple(document_ids),
+                ).fetchall()
+                stale_vector_ids = [
+                    int(vector_id)
+                    for vector_id, passage_id, text_hash in rows
+                    if current_text_hashes.get(str(passage_id)) != str(text_hash)
+                ]
+                if not stale_vector_ids:
+                    return
+                stale_placeholders = ",".join("?" for _ in stale_vector_ids)
+                ids_array = np.asarray(stale_vector_ids, dtype=np.int64)
+                self._index.remove_ids(ids_array)
+                conn.execute(
+                    f"DELETE FROM vector_metadata WHERE vector_id IN ({stale_placeholders})",
+                    tuple(stale_vector_ids),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            self._save_index()
+
     def health(self) -> dict[str, object]:
         with self._lock:
             if self._faiss is None:
@@ -321,6 +355,7 @@ class FaissVectorSearchIndex:
             }
         finally:
             conn.close()
+
 
 
 def _normalize_rows(matrix: np.ndarray) -> np.ndarray:
