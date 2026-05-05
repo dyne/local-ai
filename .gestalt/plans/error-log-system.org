@@ -158,14 +158,14 @@
 :Done when: The plan does not block on native notification permissions or platform-specific APIs.
 :END:
 
-* TODO [#B] Integrate Documents And Future Roles
+* WIP [#B] Integrate Documents And Future Roles
 :PROPERTIES:
 :Effort: 0.75 day
 :Goal: Make logs app-wide so documents, OCR, and future roles can publish diagnostics consistently.
 :Notes: Keep VSA boundaries: role slices publish events; the app shell owns display and transport.
 :END:
 
-** TODO [#B] Add log publishing points to document indexing and query flows
+** DONE [#B] Add log publishing points to document indexing and query flows
 :PROPERTIES:
 :Why: Document navigation and RAG/indexing can fail in subprocesses, OVMS calls, SQLite operations, and file decoding. Those failures should be visible in the same GUI log system.
 :Change: Add log events around document index start/success/failure, Recoll command failures, OVMS health/model errors, and query generation failures. Preserve existing response error fields.
