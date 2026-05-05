@@ -346,7 +346,7 @@
 :Notes: Recoll should handle broad document discovery and extraction. Do not add PDF/DOCX dependencies unless Recoll cannot provide enough text for candidate refinement and the user approves.
 :END:
 
-** TODO [#A] Validate text, Markdown, source, PDF, and DOCX through Recoll
+** DONE [#A] Validate text, Markdown, source, PDF, and DOCX through Recoll
 :PROPERTIES:
 :Why: The feature is intended for messy archives, but supported behavior should be based on actual local Recoll behavior.
 :Change: Create small fixture files in tests or temporary integration directories: `.txt`, `.md`, `.py`, `.json`, `.pdf`, `.docx`, one binary file, and one unsupported file. Use default tests with fake Recoll. Add optional real Recoll integration tests behind `LOCAL_AI_RECOLL_INTEGRATION=1` to verify indexing and query visibility for those formats. For PDF/DOCX, record whether Recoll returns enough text for semantic passages or only lexical snippets.
@@ -401,7 +401,7 @@
 :Done when: Packaging behavior for Recoll, Redis client, and OVMS assets is explicit and tested.
 :END:
 
-** TODO [#C] Update AGENTS.md after implementation
+** DONE [#C] Update AGENTS.md after implementation
 :PROPERTIES:
 :Why: Future agents need accurate guidance after the feature exists.
 :Change: Add a concise Documents section to `AGENTS.md`: slice boundaries, Recoll lexical-first retrieval, Redis candidate-scoped vector search, OVMS embeddings and generation command, supported formats based on Recoll validation, health endpoints, CLI commands, and validation commands. Do not promise generation if no generative OVMS model is configured.
