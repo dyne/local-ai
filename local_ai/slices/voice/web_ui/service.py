@@ -36,9 +36,11 @@ from local_ai.slices.documents.service_bundle import build_documents_service_bun
 from local_ai.slices.documents.adapters.ovms_lifecycle import OvmsProcessManager
 from local_ai.slices.documents.web import register_documents_routes
 from local_ai.slices.voice.transcribe_uploaded_media.request import TranscribeUploadedMediaRequest
+from local_ai.slices.voice.transcribe_uploaded_media.request import TranscribeLocalMediaRequest
 from local_ai.slices.voice.transcribe_uploaded_media.service import (
     UploadedMediaError,
     MAX_UPLOAD_BYTES,
+    transcribe_local_media_path,
     transcribe_uploaded_media,
 )
 
@@ -258,6 +260,59 @@ class AudioStreamService:
                 }
             )
 
+        async def local_file_transcription(request: Request) -> JSONResponse:
+            client_host = request.client.host if request.client is not None else None
+            if not _is_local_client(client_host):
+                raise HTTPException(status_code=403, detail={"reason": "Localhost only.", "details": ["This endpoint is restricted to loopback clients."]})
+            try:
+                payload = await request.json()
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail={"reason": "Invalid JSON body.", "details": ["Expected JSON payload with path."]}) from exc
+            path_value = str(payload.get("path", "")).strip()
+            if not path_value:
+                raise HTTPException(status_code=400, detail={"reason": "Missing path.", "details": ["Provide a local file path."]})
+            silence_detect = bool(payload.get("silence_detect", True))
+            try:
+                vad_mode = int(payload.get("vad_mode", 3))
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail={"reason": "Invalid vad_mode.", "details": ["Expected integer 0-3."]}) from exc
+            if vad_mode not in (0, 1, 2, 3):
+                raise HTTPException(status_code=400, detail={"reason": "Invalid vad_mode.", "details": ["Use one of: 0, 1, 2, 3."]})
+            try:
+                response = await transcribe_local_media_path(
+                    request=TranscribeLocalMediaRequest(
+                        source_path=pathlib.Path(path_value).expanduser(),
+                        silence_detect=silence_detect,
+                        vad_mode=vad_mode,
+                    ),
+                    pipe=self.ctx.pipe,
+                    generate_kwargs=self.ctx.generate_kwargs,
+                    infer_lock=self.ctx.infer_lock,
+                    logger=self.logger,
+                    start_time=self.ctx.start_time,
+                    verbose=self.ctx.verbose,
+                    likely_reason_details_fn=self.likely_reason_details_fn,
+                    to_thread_fn=self.to_thread_fn,
+                )
+            except UploadedMediaError as exc:
+                self.publish_log_event(
+                    level=LogLevel.ERROR,
+                    source=sources.VOICE_UPLOAD,
+                    message=exc.reason,
+                    details=exc.details,
+                    notification=True,
+                )
+                raise HTTPException(status_code=exc.status_code, detail={"reason": exc.reason, "details": exc.details}) from exc
+            return JSONResponse(
+                {
+                    "text": response.text,
+                    "duration_seconds": response.duration_seconds,
+                    "sample_rate": response.sample_rate,
+                    "source_name": response.source_name,
+                    "details": response.details,
+                }
+            )
+
         return build_browser_app(
             index_html=self.index_html,
             static_assets_dir=self.static_assets_dir,
@@ -269,6 +324,7 @@ class AudioStreamService:
             app_logs_handler=app_logs,
             app_log_events_handler=app_log_events,
             upload_transcription_handler=upload_transcription,
+            local_file_transcription_handler=local_file_transcription,
             register_extra_routes=lambda app: register_documents_routes(
                 app,
                 bundle=documents_bundle,

@@ -4,12 +4,16 @@
   export let source = "";
   export let query = "";
   export let autoScroll = true;
+  export let collapsed = false;
   export let sources = [];
+  export let selectedEventId = "";
   export let onLevelChange = () => {};
   export let onSourceChange = () => {};
   export let onQueryChange = () => {};
   export let onClearView = () => {};
   export let onToggleAutoScroll = () => {};
+  export let onSelectEvent = () => {};
+  export let onExpand = () => {};
 
   function copyEvent(item) {
     const text = `${item.timestamp} ${item.level} ${item.source} ${item.message}${item.details?.length ? ` | ${item.details.join(" ")}` : ""}`;
@@ -18,33 +22,50 @@
 </script>
 
 <section class="log-panel">
-  <header>
-    <h3>App Logs</h3>
-    <button type="button" on:click={onClearView}>Clear View</button>
-  </header>
-  <div class="filters">
-    <input placeholder="Search logs" value={query} on:input={(e) => onQueryChange(e.currentTarget.value)} />
-    <select value={level} on:change={(e) => onLevelChange(e.currentTarget.value)}>
-      <option value="">All levels</option>
-      <option value="ERROR">ERROR</option>
-      <option value="WARNING">WARNING</option>
-      <option value="INFO">INFO</option>
-      <option value="DEBUG">DEBUG</option>
-    </select>
-    <select value={source} on:change={(e) => onSourceChange(e.currentTarget.value)}>
-      <option value="">All sources</option>
-      {#each sources as sourceName}
-        <option value={sourceName}>{sourceName}</option>
-      {/each}
-    </select>
-    <label class="toggle"><input type="checkbox" checked={autoScroll} on:change={(e) => onToggleAutoScroll(e.currentTarget.checked)} /> Auto-scroll</label>
-  </div>
+  {#if !collapsed}
+    <header>
+      <h3>App Logs</h3>
+      <button type="button" on:click={onClearView}>Clear View</button>
+    </header>
+    <div class="filters">
+      <input placeholder="Search logs" value={query} on:input={(e) => onQueryChange(e.currentTarget.value)} />
+      <select value={level} on:change={(e) => onLevelChange(e.currentTarget.value)}>
+        <option value="">All levels</option>
+        <option value="ERROR">ERROR</option>
+        <option value="WARNING">WARNING</option>
+        <option value="INFO">INFO</option>
+        <option value="DEBUG">DEBUG</option>
+      </select>
+      <select value={source} on:change={(e) => onSourceChange(e.currentTarget.value)}>
+        <option value="">All sources</option>
+        {#each sources as sourceName}
+          <option value={sourceName}>{sourceName}</option>
+        {/each}
+      </select>
+      <label class="toggle"><input type="checkbox" checked={autoScroll} on:change={(e) => onToggleAutoScroll(e.currentTarget.checked)} /> Auto-scroll</label>
+    </div>
+  {/if}
   <div class="rows">
     {#if events.length === 0}
       <p class="empty">No logs yet.</p>
+    {:else if collapsed}
+      {#each events.slice(-8).reverse() as item}
+        <button
+          type="button"
+          class="pill"
+          class:error={item.level === "ERROR"}
+          on:click={() => {
+            onSelectEvent(item.id);
+            onExpand();
+          }}
+          title={`${item.source} ${item.message}`}
+        >
+          <strong>{item.level}</strong> {item.message.split(" ").slice(0, 4).join(" ")}
+        </button>
+      {/each}
     {:else}
       {#each events as item}
-        <article class="row" class:error={item.level === "ERROR"}>
+        <article class="row" class:error={item.level === "ERROR"} class:selected={selectedEventId === item.id} on:click={() => onSelectEvent(item.id)}>
           <div class="meta">{item.timestamp} <strong>{item.level}</strong> {item.source}</div>
           <div class="message">{item.message}</div>
           {#if item.details?.length}
@@ -72,6 +93,9 @@
   .details { margin-top: 4px; color: #3f5568; font-size: 0.9rem; }
   .copy { margin-top: 6px; }
   .empty { margin: 0; color: #4b6073; }
+  .pill { border: 1px solid #c8d5df; border-radius: 999px; padding: 6px 10px; text-align: left; background: #fff; }
+  .pill.error { border-color: #d98888; background: #fff5f5; }
+  .selected { outline: 2px solid #0d6d93; }
 
   @media (max-width: 900px) {
     .filters { grid-template-columns: 1fr; }

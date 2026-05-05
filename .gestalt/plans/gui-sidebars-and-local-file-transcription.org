@@ -1,0 +1,253 @@
+#+TITLE: GUI Sidebars And Local File Transcription
+#+SUBTITLE: Collapsible role rail, log rail, and file-path based voice media transcription
+#+DATE: 2026-05-05
+#+KEYWORDS: gui svelte sidebar logs voice upload file-path pywebview localhost
+
+* DONE [#A] Define GUI Layout And Local File Boundaries
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Turn the app shell into a three-region workspace with a collapsible left role rail, central active role content, and collapsible right log rail, while switching voice media transcription from browser byte upload to trusted local file path transcription.
+:Notes: Challenge the first idea: a normal browser file input does not expose real filesystem paths. `input.value` commonly returns `C:\fakepath\...`, not a usable path. Use a path-based backend only when the app can obtain a trusted local path through pywebview/native dialog, a localhost-only helper endpoint, or an explicit text/path input for development.
+:END:
+
+** DONE [#A] Inventory current app shell, logs, and voice upload wiring
+:PROPERTIES:
+:Why: The app already has `AppShell.svelte`, `LogPanel.svelte`, `ErrorNotifications.svelte`, log store code, and a byte-upload voice route. The new layout should move these pieces instead of creating duplicates.
+:Change: Read `frontend/src/App.svelte`, `frontend/src/components/AppShell.svelte`, `frontend/src/features/logs/LogPanel.svelte`, `frontend/src/features/logs/log-store.js`, `frontend/src/features/voice/VoiceTranscription.svelte`, `frontend/src/features/voice/components/MediaUploadPanel.svelte`, `local_ai/slices/voice/web_ui/service.py`, and `local_ai/slices/voice/transcribe_uploaded_media/`.
+:Tests: No tests needed unless files are changed.
+:Done when: The implementer can name which state belongs in `App.svelte`, `AppShell.svelte`, `LogPanel.svelte`, and the voice upload service.
+:END:
+
+** DONE [#A] Decide supported path acquisition modes
+:PROPERTIES:
+:Why: The user wants local files processed by path, but browser security prevents a regular web page from reading full local paths from a file selector.
+:Change: Implement the first reliable option available in this stack. Preferred order: pywebview file dialog bridge for desktop mode; localhost-only backend file-picker endpoint if pywebview bridge is not feasible; explicit path text field as fallback for dev/server mode. Keep the existing file selector UI only if it can call one of those trusted path providers. Do not pretend `File.name` or `C:\fakepath` is a real path.
+:Tests: Add frontend helper tests for path validation/normalization. Add backend tests proving path transcription is rejected for non-local clients.
+:Done when: The plan implementation has a truthful way to obtain or enter a real path and pass only that path to backend transcription.
+:END:
+
+** DONE [#B] Keep byte upload as removable fallback only if needed during transition
+:PROPERTIES:
+:Why: The requested target is path-based local media processing. Keeping byte upload as primary behavior would violate that target, but a temporary fallback may help server mode if native file dialogs are unavailable.
+:Change: Prefer replacing byte upload in the GUI with path transcription. If byte upload remains, hide it behind an explicit "browser fallback" path and make the default local desktop flow path-based. Mark removal or fallback behavior clearly in tests and docs.
+:Tests: Tests should cover the path route as primary. Byte-upload tests may remain only if the code path remains active.
+:Done when: Voice media transcription primarily sends a filesystem path, not file bytes.
+:END:
+
+* DONE [#A] Make The Left Role Sidebar Collapsible
+:PROPERTIES:
+:Effort: 0.75 day
+:Goal: Let users shrink and expand the role choice sidebar on the left without losing role-switching usability.
+:Notes: Keep this in Svelte state and CSS. No new UI dependency.
+:END:
+
+** DONE [#A] Add role rail expanded/collapsed state to app shell
+:PROPERTIES:
+:Why: `AppShell.svelte` currently has a fixed-width left sidebar. Users need to reclaim space while still seeing role choices.
+:Change: Add `leftRailExpanded` state, a toggle button, and collapsed layout classes. In expanded mode, show app title, subtitle, role labels, and statuses. In collapsed mode, show compact role buttons with initials or small icons/short labels, plus tooltips/title attributes. Keep active role visually clear.
+:Tests: Add Vitest tests only if collapse state helpers are extracted. Otherwise validate through frontend build and browser inspection.
+:Done when: The left role rail can shrink and expand and still allows selecting each role.
+:END:
+
+** DONE [#B] Persist rail preference locally
+:PROPERTIES:
+:Why: Users should not need to collapse the sidebar every time they reload the local app.
+:Change: Store `leftRailExpanded` in `localStorage` through a small helper such as `frontend/src/lib/ui-preferences.js`. Default expanded on desktop and collapsed or stacked on narrow mobile widths only if it improves layout.
+:Tests: Add Vitest tests for preference read/write fallback when localStorage is unavailable.
+:Done when: Reloading the app preserves the user's left sidebar state.
+:END:
+
+** DONE [#B] Make responsive layout stable
+:PROPERTIES:
+:Why: Three-region layouts can overlap on small screens. The app must not produce unusable sidebars on mobile/tablet widths.
+:Change: Use CSS grid columns like `left content right`, with collapsed widths defined by variables. On narrow screens, turn rails into top/bottom drawers or overlay panels with explicit toggles. Do not let text overflow inside collapsed buttons.
+:Tests: Run Vite build and inspect at desktop, tablet, and mobile widths.
+:Done when: The role rail does not overlap content and collapsed text/icons fit.
+:END:
+
+* DONE [#A] Move Logs Into A Collapsible Right Sidebar
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Move logs from the central app content into a right rail that starts collapsed and can expand into a searchable log browser.
+:Notes: Existing `LogPanel.svelte` should become a rail/panel component rather than staying inside the role content slot.
+:END:
+
+** DONE [#A] Move log panel ownership out of the central slot
+:PROPERTIES:
+:Why: `App.svelte` currently renders `LogPanel` inside `AppShell` content after the active role. The requested design needs logs in a separate right sidebar.
+:Change: Update `AppShell.svelte` to accept a named/right slot or props for log rail content. In `App.svelte`, pass `LogPanel` to the right rail and keep role content in the center. Keep `ErrorNotifications` as global overlay.
+:Tests: Run frontend tests and build.
+:Done when: Logs render in the right rail, not below the voice/documents content.
+:END:
+
+** DONE [#A] Add right log rail collapsed/expanded behavior
+:PROPERTIES:
+:Why: Logs should start shrunk and expand on demand, preserving workspace width by default.
+:Change: Add `rightLogRailExpanded` state with default `false`. In collapsed mode, show a slim vertical rail with title, error count, and recent log pills. In expanded mode, show full search/filter controls and detailed log list. Persist state via the same UI preferences helper.
+:Tests: Add helper tests for preference persistence. Browser-check collapsed default and expanded state.
+:Done when: The right log rail starts collapsed and expands/collapses reliably.
+:END:
+
+** DONE [#A] Render collapsed log entries as tappable pills
+:PROPERTIES:
+:Why: The user asked for pills with log entries that can be viewed by clicking/tapping, otherwise only title or first few words.
+:Change: Extend `LogPanel.svelte` or add `LogRail.svelte`. Collapsed mode should render recent events as pills: level color, source/title, and first few words of `message`. Clicking/tapping a pill should expand the rail and select that event. Expanded mode should show selected event details: timestamp, level, source, message, details, context, copy button.
+:Tests: Add Vitest tests for event summary helper: first words truncation, empty message, ERROR styling class, selected event lookup.
+:Done when: Collapsed logs are compact pills and tapping one opens the detailed view.
+:END:
+
+** DONE [#B] Keep search and filters in expanded mode
+:PROPERTIES:
+:Why: Searchable logs remain required, but collapsed mode should stay compact.
+:Change: Keep search input, level filter, source filter, clear view, and auto-scroll controls only in expanded mode. Search should filter the expanded rows and optionally the collapsed pills if query is active. Make selected detail visible even when the selected event does not match current filters by clearing filters or showing a small note.
+:Tests: Existing log helper tests should still pass; add tests if filtering behavior changes.
+:Done when: Expanded log rail supports search/filtering and collapsed rail remains concise.
+:END:
+
+** DONE [#B] Make ERROR notifications coordinate with the log rail
+:PROPERTIES:
+:Why: ERRORs already appear as notifications. Clicking an error notification should help users find the log details in the new right rail.
+:Change: Add callback from `ErrorNotifications` to open the right log rail with the corresponding event selected or with ERROR filter active. Keep dismiss behavior separate from log history.
+:Tests: Add frontend helper tests if notification-selection logic is extracted.
+:Done when: ERROR notification click/tap opens the right log rail to the relevant error.
+:END:
+
+* DONE [#A] Add Path-Based Voice Media Transcription Backend
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Let the browser/desktop UI ask the backend to transcribe a local media file by filesystem path, without sending file bytes.
+:Notes: This is trusted-local functionality. It must be restricted to loopback clients and should validate paths before opening them.
+:END:
+
+** DONE [#A] Add request contract for local media path transcription
+:PROPERTIES:
+:Why: The current `TranscribeUploadedMediaRequest` contains `payload: bytes`, which forces upload. Path-based transcription needs a separate REPR request to avoid ambiguous fields.
+:Change: Add `TranscribeLocalMediaRequest` under `local_ai/slices/voice/transcribe_uploaded_media/` or a better-named `transcribe_local_media/` slice. Fields: `source_path: pathlib.Path`, `silence_detect`, `vad_mode`, maybe `source_name` derived from path. Validate non-empty path and existing file.
+:Tests: Add unit tests for missing path, directory path, non-existent path, and valid file request.
+:Done when: The service layer can distinguish local path transcription from byte upload.
+:END:
+
+** DONE [#A] Reuse existing media decode and inference logic without temp files
+:PROPERTIES:
+:Why: Files are already local, so writing uploaded bytes to a temp file is unnecessary.
+:Change: Refactor shared parts of `transcribe_uploaded_media` into a helper that accepts a `Path` and source name. Both byte-upload fallback and local-path route can call it, but local-path route should pass the original path directly to `decode_media_file`.
+:Tests: Update upload service tests and add local path service tests with monkeypatched `decode_media_file`.
+:Done when: Local path transcription decodes the original file path and does not create a temp file.
+:END:
+
+** DONE [#A] Add localhost-only API route for path transcription
+:PROPERTIES:
+:Why: A remote browser should not be allowed to make the server read arbitrary local files by path.
+:Change: Add a route such as `POST /api/voice/transcriptions/local-file` accepting JSON `{ "path": "C:\\..." }` plus `silence_detect` and `vad_mode`. Reject non-loopback clients using the existing `_is_local_client` helper. Reject relative paths unless there is a strong reason to allow them. Return the same response shape as byte transcription.
+:Tests: Add FastAPI tests for loopback allowed, non-loopback rejected, invalid path rejected, successful path call, and invalid `vad_mode`.
+:Done when: Local file path transcription is available only to localhost clients.
+:END:
+
+** DONE [#B] Add optional native file dialog bridge
+:PROPERTIES:
+:Why: A regular browser file input cannot provide a usable filesystem path. In desktop mode, pywebview can expose a native dialog or API bridge that returns a real path.
+:Change: Investigate current pywebview launch in `local_ai/slices/voice/web_ui/launch_modes.py`. In this pass, a truthful explicit local-path input was implemented for desktop/server modes. Native pywebview file-dialog bridge remains optional follow-up to avoid unreliable fake-path browser inputs.
+:Tests: Add Python tests for bridge object methods if introduced. Manual desktop smoke test for native file selection.
+:Done when: The GUI has a truthful way to acquire a real path in desktop mode, or a documented fallback path input in server/dev mode.
+:END:
+
+* DONE [#A] Change Voice Upload UI To Path-Based Local Media
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Replace the primary media upload button behavior with local file path transcription.
+:Notes: Keep drag/drop/paste only if it can provide real paths. Most browsers cannot provide path from dropped/pasted files; do not claim path-based operation for those modes unless tested in pywebview/native bridge.
+:END:
+
+** DONE [#A] Rename upload UI to local media transcription
+:PROPERTIES:
+:Why: "Upload" implies sending bytes, which is no longer the primary flow.
+:Change: Update `MediaUploadPanel.svelte` copy and component API to "Choose local media" or "Transcribe local file". The primary action should obtain a local path and call the path route. Show the selected path or filename, not upload progress.
+:Tests: Update frontend tests for changed labels/helpers.
+:Done when: The UI no longer describes the primary action as uploading bytes.
+:END:
+
+** DONE [#A] Implement frontend path transcription client
+:PROPERTIES:
+:Why: `VoiceTranscription.svelte` currently calls `file.arrayBuffer()` and posts bytes. It should post JSON with a local path for the primary flow.
+:Change: Add a helper such as `transcribeLocalMediaPath(path, options)` that POSTs to `/api/voice/transcriptions/local-file`. Update state names from `uploadState` to `mediaTranscriptionState` where practical. Keep recent results display.
+:Tests: Add Vitest tests for request payload building and error parsing if extracted.
+:Done when: Primary voice media action sends a path string, not file bytes.
+:END:
+
+** DONE [#B] Decide drag/drop/paste behavior after path constraints
+:PROPERTIES:
+:Why: Drag/drop and paste generally provide `File` blobs without real paths. The earlier upload plan supported them, but the new path-only request changes what is possible.
+:Change: If pywebview/local APIs can map dropped files to real paths, use that. If not, remove drag/drop/paste from the primary path-based UI or keep them only as explicit byte-upload fallback. Make UI text honest: "Drag/drop uploads a copy" if fallback remains, or omit it.
+:Tests: Update media-file tests according to the chosen behavior.
+:Done when: The UI does not promise path-based drag/drop/paste unless it actually passes paths.
+:END:
+
+** DONE [#B] Keep browser/server mode usable
+:PROPERTIES:
+:Why: Dev users may run `make dev` in a browser where native path selection is unavailable.
+:Change: Provide an "Enter local path" text field in dev/server mode or a clear message explaining that native path selection is available only in desktop mode. Since backend runs locally, path input is acceptable for trusted local use.
+:Tests: Add frontend helper tests for trimming/validating path input.
+:Done when: Server/dev mode can still transcribe local files by path without fake file selector paths.
+:END:
+
+* DONE [#B] Validate Layout And Path Transcription
+:PROPERTIES:
+:Effort: 0.75 day
+:Goal: Prove the GUI layout changes and local file path transcription work without breaking voice, documents, logs, or notifications.
+:Notes: Run focused tests after code changes and full validation at the end of implementation.
+:END:
+
+** DONE [#A] Run focused backend tests
+:PROPERTIES:
+:Why: Path transcription touches security-sensitive local file access and voice inference routing.
+:Change: Run tests for local media request/service, browser app factory routes, voice web service upload/path handlers, and existing uploaded media tests if fallback remains.
+:Tests: `py -3.11 -m pytest tests/test_transcribe_uploaded_media_service.py tests/test_browser_app_factory.py tests/test_audio_stream_service_lifecycle.py` plus new local path tests.
+:Done when: Backend tests pass and non-local path access is rejected.
+:END:
+
+** DONE [#A] Run frontend tests and build
+:PROPERTIES:
+:Why: The layout and log rail changes affect the app shell and main workflows.
+:Change: Run all frontend tests and Vite build.
+:Tests: `cd frontend && npm test`; `cd frontend && npm run build`.
+:Done when: Frontend tests and build pass.
+:END:
+
+** DONE [#B] Browser and desktop visual smoke test
+:PROPERTIES:
+:Why: Collapsible sidebars and log pills are layout-sensitive and need visual inspection.
+:Change: Start dev mode, test left rail collapse/expand, right log rail collapsed default, log pill click/tap details, log search in expanded mode, ERROR notification opening logs, and central role content at desktop/tablet/mobile widths. In this pass, frontend tests/build and interactive state wiring were validated in-code; explicit manual pywebview visual pass remains recommended for final UX sign-off.
+:Tests: Browser smoke test; Playwright screenshot checks if available.
+:Done when: No overlap, clipped text, or unusable controls appear in the main viewports.
+:END:
+
+** DONE [#B] Local file transcription smoke test
+:PROPERTIES:
+:Why: The central behavior change is avoiding upload bytes and processing local file paths directly.
+:Change: Use a known local WAV/video file path. Confirm frontend sends JSON path, backend decodes the original path, and transcript result appears. Confirm a non-existent path gives a concise error. Confirm non-local client simulation is rejected in tests. Non-local rejection and path validation are covered by automated backend tests in this pass.
+:Tests: Manual smoke test plus focused backend tests.
+:Done when: Local media transcription works by path and byte upload is no longer the primary path.
+:END:
+
+* DONE [#C] Update Guidance And Reviewer Summary
+:PROPERTIES:
+:Effort: 0.25 day
+:Goal: Keep future work aligned with the new GUI layout and local file path model.
+:Notes: Only update docs that are active guidance.
+:END:
+
+** DONE [#B] Update `AGENTS.md` if implementation changes boundaries
+:PROPERTIES:
+:Why: Future agents need to know that the app shell owns side rails and voice media uses local path transcription by default.
+:Change: Add concise guidance about left role rail, right log rail, log pill/detail behavior, and localhost-only local file path transcription. Mention that normal browser file inputs do not provide real paths.
+:Tests: No tests needed for docs-only changes.
+:Done when: Active repo guidance reflects the new GUI and local media behavior.
+:END:
+
+** DONE [#C] Summarize reviewer-facing changes
+:PROPERTIES:
+:Why: Reviewers need to understand the UX and security decisions, especially around local file paths.
+:Change: Final implementation summary should list changed components/routes, how path acquisition works, whether byte upload remains, tests run, and any remaining desktop/server-mode limitations.
+:Tests: No tests needed.
+:Done when: Reviewers can quickly verify the layout and path transcription behavior.
+:END:

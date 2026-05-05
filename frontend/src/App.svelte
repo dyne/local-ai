@@ -9,6 +9,7 @@
   import { upsertErrorNotification } from "./features/logs/notifications";
   import VoiceTranscription from "./features/voice/VoiceTranscription.svelte";
   import { fallbackRoles, parseRolesResponse } from "./lib/roles";
+  import { readUiPreferences, writeLeftRailExpanded, writeRightLogRailExpanded } from "./lib/ui-preferences";
 
   let roles = fallbackRoles();
   let activeRoleId = "voice";
@@ -21,6 +22,9 @@
   let logSource = "";
   let logQuery = "";
   let autoScrollLogs = true;
+  let leftRailExpanded = true;
+  let rightLogRailExpanded = false;
+  let selectedLogEventId = "";
   let notifications = [];
 
   $: visibleLogs = logStore.filterEvents({ level: logLevel, source: logSource, query: logQuery });
@@ -36,6 +40,16 @@
 
   function pushNotification(event) {
     notifications = upsertErrorNotification(notifications, event, { maxVisible: 4 });
+  }
+
+  function toggleLeftRail() {
+    leftRailExpanded = !leftRailExpanded;
+    writeLeftRailExpanded(leftRailExpanded);
+  }
+
+  function toggleRightLogRail() {
+    rightLogRailExpanded = !rightLogRailExpanded;
+    writeRightLogRailExpanded(rightLogRailExpanded);
   }
 
   async function loadRoles() {
@@ -58,6 +72,9 @@
   let closeLive = () => {};
 
   onMount(() => {
+    const prefs = readUiPreferences();
+    leftRailExpanded = prefs.leftRailExpanded;
+    rightLogRailExpanded = prefs.rightLogRailExpanded;
     unsubscribe = logStore.subscribe(async (events) => {
       const newest = events[events.length - 1];
       allLogs = events;
@@ -87,7 +104,15 @@
 </svelte:head>
 
 <div class="app">
-  <AppShell {roles} {activeRoleId} onSelectRole={selectRole}>
+  <AppShell
+    {roles}
+    {activeRoleId}
+    onSelectRole={selectRole}
+    {leftRailExpanded}
+    rightRailExpanded={rightLogRailExpanded}
+    onToggleLeftRail={toggleLeftRail}
+    onToggleRightRail={toggleRightLogRail}
+  >
     {#if activeRoleId === "voice"}
       <VoiceTranscription />
     {:else if activeRoleId === "documents"}
@@ -101,22 +126,40 @@
       </section>
     {/if}
 
-    <LogPanel
-      events={visibleLogs}
-      level={logLevel}
-      source={logSource}
-      query={logQuery}
-      autoScroll={autoScrollLogs}
-      sources={logSources}
-      onLevelChange={(value) => (logLevel = value)}
-      onSourceChange={(value) => (logSource = value)}
-      onQueryChange={(value) => (logQuery = value)}
-      onClearView={() => logStore.clearView()}
-      onToggleAutoScroll={(value) => (autoScrollLogs = value)}
-    />
+    <svelte:fragment slot="right-rail">
+      <LogPanel
+        events={visibleLogs}
+        level={logLevel}
+        source={logSource}
+        query={logQuery}
+        autoScroll={autoScrollLogs}
+        sources={logSources}
+        collapsed={!rightLogRailExpanded}
+        selectedEventId={selectedLogEventId}
+        onExpand={() => {
+          rightLogRailExpanded = true;
+          writeRightLogRailExpanded(true);
+        }}
+        onSelectEvent={(id) => (selectedLogEventId = id)}
+        onLevelChange={(value) => (logLevel = value)}
+        onSourceChange={(value) => (logSource = value)}
+        onQueryChange={(value) => (logQuery = value)}
+        onClearView={() => logStore.clearView()}
+        onToggleAutoScroll={(value) => (autoScrollLogs = value)}
+      />
+    </svelte:fragment>
   </AppShell>
 
-  <ErrorNotifications {notifications} onDismiss={dismissNotification} />
+  <ErrorNotifications
+    {notifications}
+    onDismiss={dismissNotification}
+    onOpenLog={(item) => {
+      rightLogRailExpanded = true;
+      writeRightLogRailExpanded(true);
+      logLevel = "ERROR";
+      logQuery = item?.message || "";
+    }}
+  />
 </div>
 
 <style>

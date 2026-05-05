@@ -70,6 +70,10 @@ This is intentionally concrete. The repository is voice-first today, with archit
 - Python still owns session creation, event streaming, websocket audio ingestion, device/model selection, and inference.
 - The frontend must consume the existing backend contract instead of re-implementing backend behavior in the browser.
 - Prefer Svelte + Vite over SvelteKit because Python remains the only app server.
+- App shell layout is a three-region workspace:
+  - collapsible left role rail
+  - central role content
+  - collapsible right log rail with compact pills in collapsed mode and searchable details in expanded mode
 
 ## Script Intent
 
@@ -215,6 +219,7 @@ Useful current module boundaries:
 When changing behavior, prefer editing the `local_ai/` package first and keep the top-level scripts as thin adapters.
 For new roles, add role metadata in `local_ai/slices/app_shell/role_catalog.py`, add per-role slice modules under `local_ai/slices/<role>/`, and avoid mixing non-voice behavior into `local_ai/slices/voice/web_ui/`.
 For voice UI changes, keep push-to-talk and upload/drop/paste input-mode behavior in `frontend/src/features/voice/` and keep backend upload handling under `/api/voice/transcriptions`.
+For local media transcription, prefer localhost-only path-based transcription via `POST /api/voice/transcriptions/local-file`; do not treat browser file input fake paths (`C:\fakepath\...`) as real local paths.
 
 ## Testing Expectations
 

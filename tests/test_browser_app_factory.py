@@ -98,6 +98,27 @@ def test_build_browser_app_registers_upload_route_when_handler_provided() -> Non
     assert response.json()["text"] == "hello"
 
 
+def test_build_browser_app_registers_local_file_route_when_handler_provided() -> None:
+    async def local_handler(request) -> object:
+        payload = await request.json()
+        assert payload["path"] == "C:\\sample.wav"
+        return {"text": "hello"}
+
+    app = build_browser_app(
+        index_html="<html></html>",
+        create_session_handler=lambda payload: None,
+        audio_handler=lambda session_id, websocket: None,
+        events_handler=lambda session_id: None,
+        close_session_handler=lambda session_id: None,
+        local_file_transcription_handler=local_handler,
+    )
+    client = TestClient(app)
+    response = client.post("/api/voice/transcriptions/local-file", json={"path": "C:\\sample.wav"})
+
+    assert response.status_code == 200
+    assert response.json()["text"] == "hello"
+
+
 def test_build_browser_app_upload_route_passes_empty_body_to_handler() -> None:
     async def upload_handler(request) -> object:
         assert await request.body() == b""
