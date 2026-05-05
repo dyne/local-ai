@@ -29,6 +29,7 @@ from local_ai.slices.voice.web_ui.session_state import DEFAULT_AUDIO_BITRATE, Se
 from local_ai.slices.voice.web_ui.socket_loop import handle_audio_socket_connection
 from local_ai.slices.app_shell.role_catalog import role_catalog_response
 from local_ai.shared.domain.log_events import LogEvent, LogLevel, normalize_log_level
+from local_ai.shared.logging.legacy_bridge import make_legacy_logger_bridge
 from local_ai.shared.logging.log_bus import InMemoryLogBus
 from local_ai.slices.documents.service_bundle import build_documents_service_bundle
 from local_ai.slices.documents.adapters.ovms_lifecycle import OvmsProcessManager
@@ -125,10 +126,11 @@ class AudioStreamService:
         self.ctx = ctx
         self.index_html = index_html
         self.static_assets_dir = static_assets_dir
-        self.logger = logger or (lambda message, verbose, start_time: None)
+        self._sink_logger = logger or (lambda message, verbose, start_time: None)
         self.likely_reason_details_fn = likely_reason_details_fn or (lambda exc: ())
         self.to_thread_fn = to_thread_fn
         self.log_bus = log_bus or InMemoryLogBus()
+        self.logger = make_legacy_logger_bridge(log_bus=self.log_bus, sink_logger=self._sink_logger, source="voice.runtime")
         self.sessions: dict[str, SessionState] = {}
 
     async def _debug(self, session: SessionState, message: str, limit: int = 12) -> None:

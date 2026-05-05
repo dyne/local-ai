@@ -23,6 +23,8 @@ from local_ai.slices.voice.transcribe_live.request import TranscribeLiveRequest
 from local_ai.slices.voice.transcribe_live.service import execute_transcribe_live
 from local_ai.slices.voice.entrypoint import dispatch_voice_entry
 from local_ai.infrastructure.openvino.runtime_env import configure_openvino_runtime_env
+from local_ai.shared.domain.log_events import LogEvent, LogLevel
+from local_ai.shared.logging.console_adapter import ConsoleAdapter
 from network_guard import enable_loopback_only_network
 from pyspy_profile import start_py_spy_profile, stop_py_spy_profile
 from voice_runtime import likely_reason_details
@@ -32,10 +34,12 @@ from local_ai.infrastructure.openvino.whisper import (
 
 
 def log(message: str, verbose: bool, start_time: float | None = None) -> None:
-    if not verbose:
-        return
-    prefix = "[transcribe]" if start_time is None else f"[transcribe t+{time.perf_counter() - start_time:.2f}s]"
-    print(f"{prefix} {message}", file=sys.stderr, flush=True)
+    elapsed = None if start_time is None else round(time.perf_counter() - start_time, 2)
+    prefix = "transcribe" if elapsed is None else f"transcribe t+{elapsed:.2f}s"
+    ConsoleAdapter(stderr=sys.stderr, stdout=sys.stdout).emit(
+        LogEvent.create(level=LogLevel.INFO, source=prefix, message=message),
+        verbose=verbose,
+    )
 
 
 def fail(reason: str, details: list[str] | None = None, exit_code: int = 1) -> int:
