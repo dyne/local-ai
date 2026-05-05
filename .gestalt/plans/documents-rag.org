@@ -1,0 +1,418 @@
+#+TITLE: Documents RAG
+#+SUBTITLE: Local archive search with Recoll, Redis vector search, and OVMS-served models
+#+DATE: 2026-05-05
+#+KEYWORDS: documents rag recoll redis ovms embeddings local-llm vsa repr hex ddd
+
+* DONE [#A] Establish Documents Scope And Runtime Contracts
+:PROPERTIES:
+:Effort: 0.5 day
+:Goal: Replace the placeholder Documents role with a clear local-only architecture before implementing storage, retrieval, model calls, routes, or UI.
+:Notes: Keep the implementation minimal and explicit. Use Recoll for whole-archive lexical retrieval, Redis vector search for candidate-only semantic refinement, and OVMS for embeddings and generated answers. Follow the Local AI architecture: VSA per use case, REPR per route, Hex ports/adapters for IO, and light DDD names and invariants.
+:END:
+
+** DONE [#A] Inventory existing Local AI documents and app-shell boundaries
+:PROPERTIES:
+:Why: The repository already has a Documents role and placeholder slice modules. A lesser LLM must start from the current shape instead of inventing a second app shell.
+:Change: Read these files first: `local_ai/slices/documents/request.py`, `local_ai/slices/documents/response.py`, `local_ai/slices/documents/service.py`, `local_ai/slices/app_shell/role_catalog.py`, `local_ai/slices/app_shell/web.py`, `local_ai/slices/voice/web_ui/app_factory.py`, `frontend/src/App.svelte`, `frontend/src/components/AppShell.svelte`, `tests/test_placeholder_slices.py`, and `tests/test_app_shell_role_catalog.py`. Write a short note in this L2's commit body naming which placeholders are replaced.
+:Tests: No tests unless files are changed.
+:Done when: The implementer can explain where documents routes will be registered, where Documents UI state will live, and which placeholder tests must be replaced.
+:END:
+
+** DONE [#A] Inventory bundled Recoll, Redis expectation, and OVMS model runtime
+:PROPERTIES:
+:Why: The feature depends on local binaries and services that should be represented as adapters with health checks and clear diagnostics.
+:Change: Verify these paths exist: `recoll/recollindex.exe`, `recoll/recollq.exe`, `recoll/python/recoll/_recoll*.pyd`, `llm/ovms/setupvars.ps1`, `llm/ovms/ovms.exe`, and `llm/models/config.json`. Treat the Recoll Python binding as optional only; if it is not built for Python 3.11, use `recollindex.exe` and `recollq.exe` through subprocess. Record the OVMS startup command as the canonical local model server command: from `llm/`, run `.\ovms\setupvars.ps1`, then `ovms --rest_port 8080 --config_path C:\Users\denis\devel\local-ai\llm\models\config.json`. Parse `llm/models/config.json` to discover model names. As of this plan, `qwen3-embed-ov` is present and should be used for embeddings. Generation must use an OVMS-served generative model when one is added to the same config; until then return evidence with `generation_status = "not_configured"`.
+:Tests: No tests unless code is changed.
+:Done when: The plan implementer knows the exact local paths, the OVMS startup command, and that model access must be local OVMS HTTP, not external APIs.
+:END:
+
+** DONE [#A] Define domain vocabulary and invariants
+:PROPERTIES:
+:Why: Documents behavior will span storage, Recoll, Redis, OVMS, API responses, and frontend state. Stable names prevent ad hoc dictionaries and unclear ownership.
+:Change: Add `local_ai/slices/documents/domain.py`. Define frozen dataclasses or simple classes for `ArchiveSource`, `DocumentRef`, `DocumentText`, `Passage`, `SearchCandidate`, `EvidencePassage`, `IndexRun`, `VectorIndexStatus`, `ModelServerStatus`, and `DocumentsAnswer`. Add native doc-comments explaining each class. Enforce these invariants in constructors or factory functions: accepted source paths are absolute; source roots cannot be inside `.local-ai/documents`; document ids are stable hashes of normalized path plus source id; passage offsets are non-negative and `start < end`; scores are finite floats; evidence must include document id, passage id, source title/path, and text; answer citations must refer to returned evidence ids.
+:Tests: Add `tests/test_documents_domain.py` covering valid construction, invalid source path, source self-index rejection, stable document id, invalid offsets, invalid score, and invalid citation reference.
+:Done when: Domain objects import without Recoll, Redis, OVMS, FastAPI, or frontend dependencies and all domain tests pass.
+:END:
+
+** DONE [#A] Define ports before adapters
+:PROPERTIES:
+:Why: Recoll, Redis, and OVMS are local IO boundaries. The query service must be testable with fake adapters.
+:Change: Add `local_ai/slices/documents/ports.py` with `Protocol` interfaces: `DocumentRepository`, `LexicalSearchIndex`, `CandidateTextLoader`, `PassageSplitter`, `EmbeddingModel`, `VectorSearchIndex`, `TextGenerator`, and `DocumentsClock` if time is needed. Keep method signatures small and typed. Minimum methods: repository can save/list sources, save index runs, read source roots, map document ids to paths, and read status; lexical index can configure sources, index, rebuild, search, and health check; text loader can load bounded text for a `SearchCandidate`; embedding model can embed query and passages and expose `model_id` plus `dimension`; vector index can ensure index, upsert passages, search within candidate document ids, delete stale vectors, and health check; text generator can generate answer from query plus context and expose `model_id`.
+:Tests: Add import-only tests or type-shape tests in `tests/test_documents_ports.py` if useful. No concrete adapter tests yet.
+:Done when: Services can depend on ports without importing concrete Recoll, Redis, or OVMS adapters.
+:END:
+
+** DONE [#A] Replace placeholder REPR contracts
+:PROPERTIES:
+:Why: Documents needs explicit route-level request and response shapes rather than one placeholder request.
+:Change: Replace `local_ai/slices/documents/request.py` and `response.py` with plain dataclasses for these use cases: `AddSourceRequest`, `IndexSourceRequest`, `QueryDocumentsRequest`, `GetDocumentRequest`, `GetDocumentsStatusRequest`, `HealthRequest`, `AddSourceResponse`, `IndexSourceResponse`, `QueryDocumentsResponse`, `GetDocumentResponse`, `DocumentsStatusResponse`, and `HealthResponse`. Defaults: `max_documents=20`, `max_passages=8`, `context_character_budget=12000`, `require_citations=True`, `semantic_mode="required"` because Redis vector search was requested. Validate positive limits and non-empty query. Keep route DTOs serializable with `dataclasses.asdict` or explicit dict builders; do not require Pydantic inside the service layer.
+:Tests: Add `tests/test_documents_request_response.py` for default values, invalid query, invalid limits, semantic mode values, and serializable output.
+:Done when: Placeholder request/response behavior is gone and tests describe the new REPR contracts.
+:END:
+
+* DONE [#A] Build Durable Metadata And Configuration
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Store Local AI metadata locally while leaving lexical content to Recoll and vectors to Redis.
+:Notes: Use SQLite from the standard library for metadata because it is simple and local. Do not use SQLite FTS for search; Recoll is the lexical search adapter.
+:END:
+
+** DONE [#A] Add documents configuration module
+:PROPERTIES:
+:Why: Adapter paths, Redis URL, OVMS URL, model names, and data directories need one local source of truth.
+:Change: Add `local_ai/slices/documents/config.py`. Define `DocumentsConfig` with fields: `metadata_db_path`, `app_data_dir`, `recoll_bin_dir`, `recoll_home_dir`, `redis_url`, `redis_index_name`, `ovms_base_url`, `ovms_config_path`, `ovms_setupvars_path`, `embedding_model_name`, `generation_model_name`, `default_max_documents`, and `default_max_passages`. Defaults should resolve relative to repo root: `.local-ai/documents/metadata.sqlite3`, `.local-ai/documents/recoll`, `recoll/`, `redis://localhost:6379`, `local-ai-documents`, `http://127.0.0.1:8080`, `llm/models/config.json`, `llm/ovms/setupvars.ps1`, `qwen3-embed-ov`, and no generation model until config contains one. Allow environment overrides with names starting `LOCAL_AI_DOCUMENTS_`, for example `LOCAL_AI_DOCUMENTS_REDIS_URL` and `LOCAL_AI_DOCUMENTS_OVMS_URL`.
+:Tests: Add `tests/test_documents_config.py` covering defaults, repo-root path resolution, environment overrides, and loading model names from `llm/models/config.json`.
+:Done when: All document adapters can be built from `DocumentsConfig` without hard-coded paths scattered through services.
+:END:
+
+** DONE [#A] Implement SQLite metadata repository
+:PROPERTIES:
+:Why: The app needs stable local records for configured archive roots, index runs, health status summaries, and answer runs.
+:Change: Add `local_ai/slices/documents/adapters/sqlite_repository.py`. Create tables with idempotent SQL: `sources(id, root_path, label, created_at, updated_at, include_globs_json, exclude_globs_json, enabled)`, `document_refs(document_id, source_id, path, title, mime_type, last_seen_at)`, `index_runs(run_id, started_at, finished_at, status, rebuild, stdout_tail, stderr_tail, error_message)`, `answer_runs(run_id, query, created_at, lexical_candidate_count, refined_passage_count, generation_status, embedding_model, generation_model)`, and `settings(key, value)`. Keep SQL small and explicit. Use transactions for multi-row writes. Store paths as strings but normalize before insert.
+:Tests: Add `tests/test_documents_sqlite_repository.py` using `tmp_path`. Cover schema creation, source upsert, disabled source filtering, index run save/read, document ref upsert, settings save/read, and reopening the database.
+:Done when: Metadata repository tests pass and no adapter imports Recoll, Redis, OVMS, or FastAPI.
+:END:
+
+** DONE [#B] Add service bundle factory
+:PROPERTIES:
+:Why: Web routes and CLI should build the same service graph while tests can inject fakes.
+:Change: Add `local_ai/slices/documents/service_bundle.py`. Define `DocumentsServiceBundle` containing config, repository, lexical index, text loader, splitter, embedding model, vector index, generator, index service, query service, and status service. Add `build_documents_service_bundle(config: DocumentsConfig | None = None)` that wires concrete adapters. Keep construction lazy where possible: do not start OVMS, Recoll indexing, or Redis network calls during import.
+:Tests: Add `tests/test_documents_service_bundle.py` with monkeypatched fake adapter classes if direct concrete construction would require local services. Verify bundle fields exist and imports are cheap.
+:Done when: Backend route registration can receive one bundle and tests can supply fake bundles.
+:END:
+
+* DONE [#A] Implement Recoll Lexical Retrieval
+:PROPERTIES:
+:Effort: 1.5 days
+:Goal: Use the bundled Recoll distribution for first-stage search over the whole archive.
+:Notes: Recoll handles breadth, exact terms, identifiers, filenames, and many document formats. Treat it as a local external process behind a hex adapter.
+:END:
+
+** DONE [#A] Generate Recoll configuration from registered sources
+:PROPERTIES:
+:Why: Users should add archive roots through Local AI, and Local AI should configure Recoll deterministically.
+:Change: Add `local_ai/slices/documents/adapters/recoll_config.py`. Generate a Recoll config directory under `.local-ai/documents/recoll`. Write a minimal `recoll.conf` or the required Recoll config files using registered source roots. Include defaults to avoid indexing Local AI generated data and large irrelevant folders: `.git`, `.hg`, `.svn`, `.venv`, `venv`, `node_modules`, `dist`, `build`, `__pycache__`, `.pytest_cache`, `.local-ai`, `models`, `llm/ovms`, `whisper-tiny-fp16-ov`, and `whisper-small-fp16-ov`. Prefer exact Recoll-supported config keys after checking the bundled Recoll docs or examples; keep all config generation in one module.
+:Tests: Add `tests/test_documents_recoll_config.py` for one source, multiple sources, Windows path quoting, self-index prevention, excluded folders, and deterministic file content.
+:Done when: Given source records, the adapter can write a predictable Recoll home without running Recoll.
+:END:
+
+** DONE [#A] Add subprocess command runner for Recoll
+:PROPERTIES:
+:Why: The bundled Recoll Python extension may not match Python 3.11, so subprocess is the stable integration path.
+:Change: Add `local_ai/slices/documents/adapters/process_runner.py` or keep it inside `recoll_index.py` if small. Implement a `CommandRunner` protocol and a real runner using `subprocess.run` with list arguments, `cwd`, environment overrides, timeout, captured text output, and no shell. Add helper to prepend `recoll/` DLL directory to `PATH` for Recoll commands. Return a small `CommandResult` with `returncode`, `stdout`, `stderr`, and `elapsed_ms`. Truncate stored diagnostics to a safe length such as 4000 characters.
+:Tests: Add tests using a fake runner for result handling and one small real runner test using `py -3.11 -c "print('ok')"` if acceptable.
+:Done when: Recoll adapter tests can run without launching Recoll by injecting a fake command runner.
+:END:
+
+** DONE [#A] Implement Recoll index and search adapter
+:PROPERTIES:
+:Why: Query service needs lexical candidates without knowing Recoll command details.
+:Change: Add `local_ai/slices/documents/adapters/recoll_index.py`. Implement `configure_sources(sources)`, `index(rebuild: bool)`, `search(query, limit)`, and `health()`. Indexing runs `recollindex.exe` with the generated Recoll home. Rebuild removes only `.local-ai/documents/recoll` after verifying the resolved path is inside `.local-ai/documents`, then recreates config and runs Recoll. Search runs `recollq.exe` with a stable output format. Choose and document one parseable output mode after checking `recollq.exe --help`; if no machine format is available, parse conservative line blocks and cover them with tests. Convert each result to `SearchCandidate(document_id, source_path, title, snippet, mime_type, lexical_rank, lexical_score=None)`. Generate `document_id` from normalized path or Recoll URL.
+:Tests: Add `tests/test_documents_recoll_index.py` using fake command output for successful search, no hits, malformed output, non-zero exit, timeout, missing binaries, rebuild path safety, and health statuses. Optional real integration tests must be skipped unless `LOCAL_AI_RECOLL_INTEGRATION=1`.
+:Done when: The query service can call the Recoll adapter and receive typed candidates, and all default tests use fakes.
+:END:
+
+** DONE [#B] Implement bounded candidate text loading
+:PROPERTIES:
+:Why: Redis semantic refinement needs passage text for Recoll candidates, but only for candidates returned by lexical search.
+:Change: Add `local_ai/slices/documents/adapters/candidate_text_loader.py`. For local file paths, load text directly for known text-like extensions with safe decoding: UTF-8, UTF-8 BOM, then cp1252 fallback. Reject binary-like data with NUL bytes. Cap loaded text by config, for example 500000 characters. For non-text or Recoll-extracted formats, first try a Recoll command or output mode that can return extracted text for a result; if not available, return `DocumentText` with empty text and a warning so the API can still show lexical evidence. Keep PDF/DOCX Python parser fallbacks out of this L2 unless Recoll cannot serve them and the user explicitly approves dependencies.
+:Tests: Add `tests/test_documents_candidate_text_loader.py` for UTF-8, BOM, cp1252 fallback, binary rejection, missing file, size cap, unsupported extension warning, and preserving candidate metadata.
+:Done when: Candidate text loading is deterministic and does not scan files outside Recoll candidates.
+:END:
+
+** DONE [#B] Implement indexing use-case service
+:PROPERTIES:
+:Why: HTTP and CLI need a single use-case for adding sources and refreshing Recoll.
+:Change: Add `local_ai/slices/documents/index_source/service.py` with `IndexDocumentsService`. It reads enabled sources from the repository, asks Recoll adapter to configure and index them, records an `IndexRun`, and returns `IndexSourceResponse`. Add a separate `AddSourceService` if that keeps REPR cleaner. Validate that source paths exist and are directories or files; resolve to absolute path; reject paths inside `.local-ai/documents`. Indexing should be synchronous for the first implementation. Use `rebuild=True` only when request asks for it.
+:Tests: Add `tests/test_documents_index_service.py` with fake repository and fake Recoll adapter for add source, invalid path, self-index rejection, index success, rebuild success, Recoll failure, no sources, and diagnostics propagation.
+:Done when: Sources can be registered and indexed through services without FastAPI.
+:END:
+
+* DONE [#A] Implement OVMS Model Adapters
+:PROPERTIES:
+:Effort: 1.5 days
+:Goal: Use the local OVMS server for embeddings and generated answers instead of external services.
+:Notes: OVMS is the model boundary. The app should not spawn OVMS automatically in the first implementation; it should detect availability and return concise setup instructions with the exact local command. If later auto-start is desired, plan it separately.
+:END:
+
+** DONE [#A] Add OVMS health and model discovery adapter
+:PROPERTIES:
+:Why: Users need clear diagnostics when the model server is not running or the expected model is missing.
+:Change: Add `local_ai/slices/documents/adapters/ovms_client.py`. Implement `OvmsClient` with `base_url`, timeout, and methods `health()`, `list_configured_models_from_file()`, and low-level request helpers. Health should check `http://127.0.0.1:8080` using an OVMS endpoint that is available in this bundled server; first inspect OVMS docs or test manually, then encode one endpoint in the adapter. If no health endpoint is reliable, use a lightweight model metadata or inference endpoint for the configured embedding model. Health response must include `status`, `base_url`, `configured_models`, `missing_models`, and setup command: `cd C:\Users\denis\devel\local-ai\llm; .\ovms\setupvars.ps1; ovms --rest_port 8080 --config_path C:\Users\denis\devel\local-ai\llm\models\config.json`.
+:Tests: Add `tests/test_documents_ovms_client.py` with fake HTTP transport or monkeypatched request function for server unavailable, configured model present, configured model missing, timeout, and setup command included. Optional integration test skipped unless `LOCAL_AI_OVMS_INTEGRATION=1`.
+:Done when: The Documents status endpoint can say whether OVMS is ready and which configured models are available.
+:END:
+
+** DONE [#A] Implement OVMS embedding adapter for `qwen3-embed-ov`
+:PROPERTIES:
+:Why: Redis vector search requires embeddings, and the user wants the local OVMS model used for embeddings.
+:Change: Add `local_ai/slices/documents/adapters/ovms_embeddings.py`. Implement the `EmbeddingModel` port using OVMS model name `qwen3-embed-ov` by default. Determine the exact REST endpoint and payload by testing OVMS with the model config. Prefer OpenAI-compatible embeddings endpoint if enabled by OVMS; otherwise use native OVMS REST inference. Normalize returned vectors to unit length if the server does not already do so. Return `model_id="qwen3-embed-ov"` and detected vector dimension. Batch passage embedding requests in small batches, for example 16 passages, to avoid large payloads. Fail with a `ModelUnavailable` domain error that includes the OVMS setup command when OVMS is not running.
+:Tests: Add tests with fake OVMS responses for single query embedding, batch passage embeddings, vector normalization, dimension detection, empty input, server error, and timeout. Optional integration test skipped unless `LOCAL_AI_OVMS_INTEGRATION=1`.
+:Done when: Query service can get deterministic vector lists through the port when OVMS is reachable, and default tests do not require OVMS.
+:END:
+
+** DONE [#B] Implement OVMS text generation adapter when a generative model is configured
+:PROPERTIES:
+:Why: The final answer should be generated by local models, but the current inspected config only shows an embedding model. The app must not fake an LLM.
+:Change: Add `local_ai/slices/documents/adapters/ovms_text_generator.py`. Read `generation_model_name` from `DocumentsConfig`; if it is absent or not present in `llm/models/config.json`, the adapter returns `generation_status="not_configured"` through the service path. When a generative model appears in the config, call OVMS through the correct REST endpoint. Prefer a standard completions/chat-completions endpoint if the configured model supports it; otherwise use native infer endpoint with prompt text. Keep temperature low, for example `0.1`, and max output bounded. The adapter must never call remote APIs.
+:Tests: Add tests for no generation model configured, model configured but OVMS unavailable, successful generated text with citations, timeout, and server error using fake HTTP transport. Add optional integration test skipped unless `LOCAL_AI_OVMS_GENERATION_INTEGRATION=1`.
+:Done when: The system can either generate through OVMS or clearly return evidence-only responses without pretending generation happened.
+:END:
+
+** DONE [#B] Add model runtime status service
+:PROPERTIES:
+:Why: Backend and frontend need one source for OVMS readiness, embedding model readiness, and generation model readiness.
+:Change: Add `local_ai/slices/documents/status/service.py` or include in a status service module. Return `DocumentsStatusResponse` with fields for source count, last index run, Recoll health, Redis health, OVMS health, embedding model status, generation model status, and setup hints. Keep status read-only and fast.
+:Tests: Add `tests/test_documents_status_service.py` with fake adapters for all-ready, Recoll missing, Redis missing, OVMS missing, embedding missing, generation not configured, and no sources.
+:Done when: UI can render the Documents readiness state without invoking a query.
+:END:
+
+* DONE [#A] Implement Redis Vector Search
+:PROPERTIES:
+:Effort: 1.5 days
+:Goal: Store and search embeddings in Redis only for passages from Recoll candidate documents.
+:Notes: Redis vector search is required. Keep it candidate-scoped so the system still follows the two-stage funnel and avoids full-corpus semantic preprocessing.
+:END:
+
+** DONE [#A] Decide and isolate Redis dependency
+:PROPERTIES:
+:Why: Python needs a Redis client to use vector search. Adding a dependency affects packaging and tests.
+:Change: Check whether `redis` is already installed or declared. If not, add the smallest Redis client dependency needed for RediSearch vector commands. Keep Redis imports inside `local_ai/slices/documents/adapters/redis_vector_index.py` so import errors can produce a clear "Redis client dependency missing" diagnostic. Do not add a broad RAG framework or a vector database wrapper. If dependency files exist, update them; otherwise document dependency setup in AGENTS.md after implementation.
+:Tests: Add a test that monkeypatches import failure and verifies a clear health response. Run packaging spec tests if packaging files are edited.
+:Done when: Redis vector search is possible through a minimal adapter and dependency impact is explicit.
+:END:
+
+** DONE [#A] Add Redis vector index adapter
+:PROPERTIES:
+:Why: The semantic stage must upsert vectors and search nearest passages without leaking Redis command details into the query service.
+:Change: Add `local_ai/slices/documents/adapters/redis_vector_index.py`. Implement `ensure_index(dimension, model_id)`, `upsert_passages(passages_with_vectors)`, `search(query_vector, candidate_document_ids, limit)`, `delete_stale(document_ids, current_text_hashes)`, and `health()`. Use Redis key prefix `local-ai:documents:passage:` and metadata key `local-ai:documents:vector-index`. Store fields: passage id, document id, source path, title, text hash, embedding model id, vector dimension, lexical rank, passage text snippet, and binary vector. Use cosine distance if vectors are normalized. Use a RediSearch filter that restricts results to current Recoll candidate document ids. If Redis cannot filter a large id list cleanly, search with a slightly larger limit and post-filter in the adapter, but document that fallback.
+:Tests: Add `tests/test_documents_redis_vector_index.py` using a fake Redis client for index creation, metadata write/read, dimension mismatch, model mismatch, upsert payload, filtered search command construction, post-filter fallback, stale delete, connection error, and health response. Optional real Redis integration skipped unless `LOCAL_AI_REDIS_INTEGRATION=1`.
+:Done when: The query service can treat Redis as a `VectorSearchIndex` port and default tests require no Redis server.
+:END:
+
+** DONE [#A] Implement passage splitting
+:PROPERTIES:
+:Why: Redis should rank passages, not whole documents, and every passage needs traceable offsets.
+:Change: Add `local_ai/slices/documents/passage_splitter.py`. Implement a deterministic splitter: split by blank-line paragraphs; combine paragraphs until around 1000 characters; if a paragraph exceeds 1200 characters split by lines; if a line exceeds 1200 characters split by character windows. Use overlap of about 120 characters only for character-window fallback. Preserve `document_id`, `source_path`, `title`, `start_offset`, `end_offset`, `text`, and `passage_id` as hash of document id plus offsets plus text hash. Add doc-comments explaining the algorithm.
+:Tests: Add `tests/test_documents_passage_splitter.py` for paragraph split, line fallback, long-line fallback, overlap, stable ids, offset reconstruction, empty text, and Unicode text.
+:Done when: Candidate text can become bounded passages with stable ids and offsets.
+:END:
+
+** DONE [#A] Implement candidate-scoped vector refinement service
+:PROPERTIES:
+:Why: This service is the bridge between Recoll candidates, OVMS embeddings, and Redis vector search.
+:Change: Add `local_ai/slices/documents/refine_candidates/service.py`. It accepts a query and Recoll `SearchCandidate` records. For each candidate, load text, split passages, compute text hashes, ask Redis which vectors already exist if implemented, embed missing passages through OVMS, upsert missing vectors, embed the query through OVMS, and search Redis restricted to candidate document ids. Blend ranking conservatively: primary order by Redis similarity, tie-break by Recoll rank. Return `EvidencePassage` list and warnings. If `semantic_mode="required"` and Redis or OVMS embeddings are unavailable, return a controlled error; if later `semantic_mode="best_effort"` is added, return lexical snippets with warnings.
+:Tests: Add `tests/test_documents_refine_candidates_service.py` with fake text loader, splitter, embedding model, and Redis vector index. Cover successful refinement, no candidate text, embeddings unavailable, Redis unavailable, cache reuse if supported, candidate filter, ranking tie-break, and warning propagation.
+:Done when: Semantic refinement can be tested end-to-end without real Recoll, Redis, or OVMS.
+:END:
+
+* TODO [#A] Implement Query, Context, And Answer Generation
+:PROPERTIES:
+:Effort: 1.5 days
+:Goal: Turn user questions into cited answers grounded in Recoll plus Redis evidence and generated by OVMS when available.
+:Notes: If generation is not configured, return evidence and context metadata. Do not hallucinate an answer. Do not use external services.
+:END:
+
+** DONE [#A] Implement query documents service
+:PROPERTIES:
+:Why: This is the primary Documents use case and should orchestrate ports without knowing concrete adapter details.
+:Change: Add `local_ai/slices/documents/query_archive/service.py`. Flow: validate request; call Recoll `search(query, max_documents)`; if no candidates return `generation_status="no_evidence"` with warnings; call candidate refinement service; assemble context; call text generator if configured; save answer run; return `QueryDocumentsResponse`. Include counts: `lexical_candidate_count`, `loaded_document_count`, `passage_count`, `refined_passage_count`, `elapsed_ms`, `embedding_model`, `generation_model`, and warnings. Keep error messages concise: what failed and likely reason.
+:Tests: Add `tests/test_documents_query_service.py` using fake ports. Cover no candidates, Recoll failure, Redis failure, OVMS embedding failure, generation not configured, generated answer, citations required, limits, and answer run saved.
+:Done when: A query can be executed through service code with all external dependencies faked.
+:END:
+
+** DONE [#A] Implement context assembly
+:PROPERTIES:
+:Why: OVMS generation needs compact evidence, and users need traceability.
+:Change: Add `local_ai/slices/documents/context.py`. Implement `assemble_context(query, evidence, character_budget)`. Output a context block with numbered citations: `[S1] path_or_title`, metadata line with passage id and offsets, then passage text. Deduplicate identical passage text from the same document. Truncate deterministically by evidence order and budget. Return both `context_text` and citation metadata list. Do not compress with a model.
+:Tests: Add `tests/test_documents_context.py` for numbering, dedupe, budget truncation, metadata preservation, source order, empty evidence, and long passage truncation.
+:Done when: Context assembly is deterministic and citations match response evidence.
+:END:
+
+** DONE [#A] Define prompt policy for grounded answers
+:PROPERTIES:
+:Why: The LLM should answer from evidence and admit insufficient evidence.
+:Change: Add `local_ai/slices/documents/prompt_policy.py`. Build a prompt with: system instruction saying this is Local AI Documents; answer only from provided sources; cite sources like `[S1]`; say "I do not have enough evidence in the indexed documents" when evidence is insufficient; distinguish direct evidence from inference; do not mention hidden implementation details. User prompt includes the query and the context block. Keep this policy in the documents slice.
+:Tests: Add `tests/test_documents_prompt_policy.py` for evidence-only instruction, citation instruction, insufficient-evidence instruction, query inclusion, and context inclusion.
+:Done when: Generation prompts are stable and tested without calling OVMS.
+:END:
+
+** TODO [#B] Implement optional extractive compression
+:PROPERTIES:
+:Why: Some evidence passages may be too long for the configured model context.
+:Change: Add a deterministic compression function only after context assembly works. Keep headings, sentences containing query terms, neighboring sentences, and short list items. Preserve citation ids and never invent text. Make it optional behind request flag `compress_context=False` by default.
+:Tests: Add tests for preserving headings, query-matching sentences, source ids, short passages unchanged, and character budget.
+:Done when: Compression is available but not required for the first query path.
+:END:
+
+** TODO [#B] Implement streaming after non-streaming generation
+:PROPERTIES:
+:Why: Local LLM generation can be slow, but streaming should not complicate the first correct answer path.
+:Change: Add streaming only after `POST /api/documents/query` works. The streaming path should use the same query service up through evidence and prompt creation, then stream generation chunks from OVMS if the configured endpoint supports streaming. End with a final metadata event containing citations and warnings. If OVMS endpoint does not support streaming, skip this L2 and keep non-streaming only.
+:Tests: Add tests for stream unavailable, stream chunks, final metadata event, and generator error before first chunk.
+:Done when: Streaming is implemented only if OVMS supports it cleanly; otherwise the plan records why it was skipped.
+:END:
+
+* DONE [#A] Expose Documents Backend Routes
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Add explicit REPR-style HTTP endpoints under the Documents slice and wire them into the existing app shell.
+:Notes: Do not move voice routes. Do not initialize Whisper, Recoll indexing, Redis, or OVMS during import.
+:END:
+
+** DONE [#A] Register documents routes from the documents slice
+:PROPERTIES:
+:Why: Future roles should not be mixed into `local_ai/slices/voice/web_ui/`.
+:Change: Add `local_ai/slices/documents/web.py` with `register_documents_routes(app, bundle)`. Wire it from the existing FastAPI app factory where app-shell routes are composed. Routes: `GET /api/documents/status`, `POST /api/documents/sources`, `POST /api/documents/index`, `POST /api/documents/query`, `GET /api/documents/{document_id}`, `GET /api/documents/health/recoll`, `GET /api/documents/health/redis`, and `GET /api/documents/health/ovms`. Add `POST /api/documents/query/stream` only if streaming L2 is implemented.
+:Tests: Add or update app factory tests to assert documents routes exist and existing voice routes still exist.
+:Done when: Documents routes are registered through `local_ai/slices/documents/web.py` and can be tested without a voice session.
+:END:
+
+** DONE [#A] Implement source and index endpoints
+:PROPERTIES:
+:Why: Users need to register archive roots and refresh the Recoll index.
+:Change: `POST /api/documents/sources` accepts `AddSourceRequest` JSON with `path`, optional `label`, `include_globs`, and `exclude_globs`; returns source id and current source list. `POST /api/documents/index` accepts `IndexSourceRequest` with `rebuild: bool = False`; runs `IndexDocumentsService`; returns run status, elapsed time, and diagnostics tails. Keep indexing synchronous for MVP. Use FastAPI `HTTPException` for invalid paths or adapter failures with concise details.
+:Tests: Add `tests/test_documents_web_sources.py` with fake bundle for add source success, invalid path, index success, rebuild success, and Recoll failure.
+:Done when: API clients can register a source and run indexing from HTTP.
+:END:
+
+** DONE [#A] Implement query and document lookup endpoints
+:PROPERTIES:
+:Why: The frontend and CLI need stable APIs for questions and citation preview.
+:Change: `POST /api/documents/query` accepts `QueryDocumentsRequest` JSON and returns `QueryDocumentsResponse`. `GET /api/documents/{document_id}` returns metadata and bounded preview text from the candidate text loader or repository path mapping. Never read files outside registered source roots. If document id is unknown, return 404.
+:Tests: Add `tests/test_documents_web_query.py` for successful evidence-only response, generated response, no evidence, invalid limits, unknown document id, and path containment.
+:Done when: HTTP query and citation preview work with fake services.
+:END:
+
+** DONE [#A] Implement health endpoints
+:PROPERTIES:
+:Why: Users must be able to distinguish Recoll, Redis, and OVMS setup problems.
+:Change: `GET /api/documents/health/recoll` returns status, binary paths, Recoll home path, and last index run. `GET /api/documents/health/redis` returns status, Redis URL with credentials stripped, index name, vector count if available, model id, and dimension if known. `GET /api/documents/health/ovms` returns status, base URL, configured model names from `llm/models/config.json`, embedding model readiness, generation model readiness, and the exact setup command. Keep all health responses JSON serializable.
+:Tests: Add `tests/test_documents_web_health.py` with fake adapters for all-ready, missing Recoll, missing Redis, missing OVMS, missing embedding model, and generation not configured.
+:Done when: The UI can show actionable readiness diagnostics before a query.
+:END:
+
+** DONE [#B] Add CLI commands without breaking voice flags
+:PROPERTIES:
+:Why: CLI indexing/querying makes the feature useful and testable before the frontend is complete.
+:Change: Extend the existing entrypoint conservatively. Prefer a `--documents` mode with subcommands if it fits current parser: `py -3.11 .\local-ai-voice.py --documents add-source <path>`, `--documents index [--rebuild]`, `--documents query "<question>"`. If parser complexity becomes high, add a thin `local-ai-documents.py` shell that reuses the same service bundle. Existing voice flags must remain stable.
+:Tests: Add parser tests and `py_compile` coverage for changed top-level scripts. Add subprocess smoke tests only if existing test style supports them cheaply.
+:Done when: Users can register a folder, index, and query from a terminal without starting the browser UI.
+:END:
+
+* DONE [#B] Build Documents Frontend Workspace
+:PROPERTIES:
+:Effort: 1.5 days
+:Goal: Replace the Documents placeholder with a practical source, indexing, query, answer, and evidence workspace.
+:Notes: Keep the UI work-focused and consistent with the current Svelte app shell. Do not add a router dependency. Do not create a landing page.
+:END:
+
+** DONE [#A] Add Documents feature module
+:PROPERTIES:
+:Why: Documents state should live under its role, not in `App.svelte` or voice components.
+:Change: Create `frontend/src/features/documents/DocumentsWorkspace.svelte`. Add helper modules only if needed: `frontend/src/features/documents/api.js` and `frontend/src/features/documents/response.js`. The first screen should show status strip for Recoll, Redis, and OVMS; source input and source list; index button; query box; answer panel; evidence list; and document preview panel. Use existing app shell role selection.
+:Tests: Add Vitest tests for helper modules if created. Run `cd frontend && npm test`.
+:Done when: Selecting Documents renders a real workspace and Voice still renders unchanged.
+:END:
+
+** DONE [#A] Connect status, source, and indexing UI
+:PROPERTIES:
+:Why: Users need setup feedback before asking questions.
+:Change: Fetch `/api/documents/status`, `/api/documents/health/recoll`, `/api/documents/health/redis`, and `/api/documents/health/ovms` on Documents mount. Render compact statuses: ready, not configured, unavailable, error. Show OVMS setup command when OVMS is unavailable. Add a source path input and an index/rebuild control. Show last index run status and diagnostics tail when indexing fails.
+:Tests: Add tests for status normalization helpers if extracted. Manually validate with fake backend or by mocking fetch in tests.
+:Done when: Users can see whether Recoll, Redis, and OVMS are ready and can start indexing from the UI.
+:END:
+
+** DONE [#A] Connect query and evidence UI
+:PROPERTIES:
+:Why: The core workflow is asking a question and inspecting cited evidence.
+:Change: Submit queries to `/api/documents/query`. Render answer text when `generation_status="generated"`. Render evidence-first response when generation is not configured. Show warnings for no evidence, Redis unavailable, OVMS unavailable, and unsupported candidate text. Evidence list items show citation id, title/path, snippet, and scores. Clicking evidence loads document preview.
+:Tests: Add helper tests for response normalization and citation labels if extracted. Run `cd frontend && npm run build`.
+:Done when: A user can ask a question and inspect cited passages in the Documents workspace.
+:END:
+
+** DONE [#B] Add bounded document preview
+:PROPERTIES:
+:Why: Citations must be traceable to source content.
+:Change: Load `GET /api/documents/{document_id}` when evidence is selected. Show path/title, offsets if present, and bounded preview text. If preview is truncated, show a concise truncation note. Highlight selected passage text if offset or exact snippet match is available.
+:Tests: Add tests for offset/highlight helper if extracted. Run frontend build after changes.
+:Done when: Clicking a citation shows the source context without leaving the app.
+:END:
+
+* TODO [#B] Validate Heterogeneous Document Behavior
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Verify Recoll handles common archive formats and add custom extractors only when justified.
+:Notes: Recoll should handle broad document discovery and extraction. Do not add PDF/DOCX dependencies unless Recoll cannot provide enough text for candidate refinement and the user approves.
+:END:
+
+** TODO [#A] Validate text, Markdown, source, PDF, and DOCX through Recoll
+:PROPERTIES:
+:Why: The feature is intended for messy archives, but supported behavior should be based on actual local Recoll behavior.
+:Change: Create small fixture files in tests or temporary integration directories: `.txt`, `.md`, `.py`, `.json`, `.pdf`, `.docx`, one binary file, and one unsupported file. Use default tests with fake Recoll. Add optional real Recoll integration tests behind `LOCAL_AI_RECOLL_INTEGRATION=1` to verify indexing and query visibility for those formats. For PDF/DOCX, record whether Recoll returns enough text for semantic passages or only lexical snippets.
+:Tests: Add `tests/test_documents_recoll_formats.py` with fake default tests and optional integration tests skipped by default.
+:Done when: Supported format behavior is explicit and not guessed.
+:END:
+
+** TODO [#B] Add optional parser fallback only after evidence shows need
+:PROPERTIES:
+:Why: Parser dependencies increase maintenance and packaging scope.
+:Change: If Recoll cannot provide PDF or DOCX text for semantic refinement and the user approves dependencies, add fallback adapters behind `CandidateTextLoader`. Otherwise keep lexical-only support with warnings for those formats. Do not add OCR for scanned PDFs here; route that to OCR slice later.
+:Tests: Add parser-specific tests only if parser fallback is implemented.
+:Done when: The first implementation remains minimal and format expansion is evidence-driven.
+:END:
+
+* TODO [#A] Validate, Package, And Document The Feature
+:PROPERTIES:
+:Effort: 1 day
+:Goal: Prove Documents works locally, does not break voice behavior, and documents operational requirements for future agents.
+:Notes: Follow the workflow in AGENTS.md: create the branch named after this org file when implementing, run tests before edits, run touched tests per L2, commit per changed L2, and run full validation before marking L1 DONE.
+:END:
+
+** DONE [#A] Add focused backend test suite
+:PROPERTIES:
+:Why: Retrieval and generation orchestration are easy to regress.
+:Change: Ensure tests exist for domain, config, SQLite repository, Recoll config/index, candidate text loader, OVMS client, OVMS embeddings, optional OVMS generator, Redis vector index, passage splitter, refinement service, context assembly, prompt policy, query service, status service, web routes, and CLI parser if implemented. Default tests must not require real Recoll, Redis, or OVMS; use fakes. Real integration tests must be opt-in through environment variables.
+:Tests: Run touched pytest files after each L2 change.
+:Done when: Documents behavior is covered by deterministic tests that pass without external local services.
+:END:
+
+** DONE [#A] Add end-to-end smoke test with fakes
+:PROPERTIES:
+:Why: Unit tests do not prove the whole funnel is wired correctly.
+:Change: Add `tests/test_documents_rag_smoke.py`. Use a temporary SQLite database, fake Recoll adapter returning three candidates, fake text loader with one exact identifier document, one semantic paraphrase document, and one irrelevant document, fake OVMS embedding model with deterministic vectors, fake Redis vector index, and fake generator disabled. Assert the response has lexical candidate count, refined evidence, citations, warnings if generation disabled, and no unrelated document evidence.
+:Tests: `py -3.11 -m pytest tests/test_documents_rag_smoke.py`.
+:Done when: The full service funnel works without real Recoll, Redis, or OVMS.
+:END:
+
+** DONE [#A] Run full routine validation
+:PROPERTIES:
+:Why: Documents touches backend, frontend, packaging, and top-level entrypoints.
+:Change: Run the documented minimum validation after implementation: `py -3.11 -m pytest`; `py -3.11 -m py_compile local-ai-voice.py local_ai_voice.py voice_runtime.py browser_webrtc.py`; `cd frontend && npm test`; `cd frontend && npm run build`. If optional integration tests are run, also document commands for Recoll, Redis, and OVMS setup.
+:Tests: The commands listed in Change.
+:Done when: All required validation passes or any environment-only blocker is documented with the exact command and error.
+:END:
+
+** TODO [#B] Keep packaging aligned
+:PROPERTIES:
+:Why: Recoll binaries, Redis client dependency, and OVMS paths affect frozen builds.
+:Change: If Documents is included in frozen builds, update `local-ai-voice.spec`, `GNUmakefile`, and `.github/workflows/build-and-release.yaml` together. Include `recoll/` executables and DLLs as data/binaries. Include Redis client dependency and hidden imports if added. Decide whether to bundle `llm/ovms` and `llm/models` or document them as external local runtime assets; do not silently assume they exist in frozen builds. Run packaging spec tests after changes.
+:Tests: `py -3.11 -m pytest tests/test_packaging_spec.py` plus any new packaging tests.
+:Done when: Packaging behavior for Recoll, Redis client, and OVMS assets is explicit and tested.
+:END:
+
+** TODO [#C] Update AGENTS.md after implementation
+:PROPERTIES:
+:Why: Future agents need accurate guidance after the feature exists.
+:Change: Add a concise Documents section to `AGENTS.md`: slice boundaries, Recoll lexical-first retrieval, Redis candidate-scoped vector search, OVMS embeddings and generation command, supported formats based on Recoll validation, health endpoints, CLI commands, and validation commands. Do not promise generation if no generative OVMS model is configured.
+:Tests: No tests for documentation-only changes.
+:Done when: AGENTS.md accurately describes implemented behavior and operational requirements.
+:END:
+
+** TODO [#C] Prepare reviewer summary
+:PROPERTIES:
+:Why: The feature spans several adapters and use cases.
+:Change: Final implementation summary should list changed files by boundary: domain/contracts, adapters, services, web routes, frontend, tests, packaging/docs. Include tradeoffs: Recoll handles breadth, Redis handles candidate-only semantic ranking, OVMS handles local models, no external APIs, no full-corpus embeddings, no parser dependencies unless approved.
+:Tests: No tests.
+:Done when: Reviewers can understand what was implemented, what is optional, and what remains future work.
+:END:

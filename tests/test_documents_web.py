@@ -56,6 +56,11 @@ class _Ovms:
         return {"status": "ready", "embedding_model": embedding_model, "generation_model": generation_model}
 
 
+class _VectorIndex:
+    def health(self):
+        return {"status": "ready", "index_name": "local-ai-documents"}
+
+
 class _Repository:
     def get_document_ref(self, document_id: str):
         if document_id == "doc-1":
@@ -84,6 +89,7 @@ class _Bundle:
     index_documents_service: _IndexService
     lexical_index: _LexicalIndex
     ovms_client: _Ovms
+    vector_index: _VectorIndex
     query_documents_service: _QueryService
     repository: _Repository
     text_loader: _TextLoader
@@ -98,6 +104,7 @@ def _client() -> TestClient:
         index_documents_service=_IndexService(),
         lexical_index=_LexicalIndex(),
         ovms_client=_Ovms(),
+        vector_index=_VectorIndex(),
         query_documents_service=_QueryService(),
         repository=_Repository(),
         text_loader=_TextLoader(),
@@ -135,7 +142,7 @@ def test_health_endpoints() -> None:
     assert client.get("/api/documents/health/recoll").status_code == 200
     assert client.get("/api/documents/health/ovms").status_code == 200
     redis_payload = client.get("/api/documents/health/redis").json()
-    assert redis_payload["status"] == "not_configured"
+    assert redis_payload["status"] == "ready"
 
 
 def test_query_endpoint() -> None:

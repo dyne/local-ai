@@ -36,6 +36,7 @@ class QueryDocumentsService:
             max_passages=request.max_passages,
             semantic_mode=request.semantic_mode,
         )
+        warnings = list(refined.warnings)
         context_text, citations = assemble_context(
             evidence=refined.evidence,
             character_budget=request.context_character_budget,
@@ -46,8 +47,13 @@ class QueryDocumentsService:
             model_ids = {"embedding": None, "generation": None}
         else:
             prompt = build_documents_prompt(query=request.query, context=context_text)
-            answer_text = self._text_generator.generate(query=request.query, context=prompt)
-            generation_status = "generated"
+            try:
+                answer_text = self._text_generator.generate(query=request.query, context=prompt)
+                generation_status = "generated"
+            except Exception as exc:
+                answer_text = ""
+                generation_status = "unavailable"
+                warnings.append(f"Generation unavailable: {exc}")
             model_ids = {"embedding": None, "generation": self._text_generator.model_id}
         elapsed = int((time.perf_counter() - started) * 1000)
         evidence_payload = tuple(
@@ -70,6 +76,6 @@ class QueryDocumentsService:
             lexical_candidate_count=len(candidates),
             refined_passage_count=len(refined.evidence),
             model_ids=model_ids,
-            warnings=refined.warnings,
+            warnings=tuple(warnings),
             elapsed_ms=elapsed,
         )
