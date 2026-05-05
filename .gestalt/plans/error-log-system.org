@@ -49,7 +49,7 @@
 :Done when: Backend routes and services can publish logs and read recent log history through one object.
 :END:
 
-** TODO [#A] Add console logging adapter using the same events
+** DONE [#A] Add console logging adapter using the same events
 :PROPERTIES:
 :Why: The requirement says logs should be shown on console as well as the GUI. Console output should not depend on `--verbose` for `ERROR`, while debug/info verbosity can still be controlled.
 :Change: Add an adapter that formats `LogEvent` to stderr/stdout with timestamp, level, source, and message. Wire it into the log bus. Keep concise formatting; include details only when present or verbose.
@@ -57,7 +57,7 @@
 :Done when: New app logs appear in console and existing concise diagnostic behavior is preserved.
 :END:
 
-** TODO [#B] Bridge existing logger callback into the log bus
+** DONE [#B] Bridge existing logger callback into the log bus
 :PROPERTIES:
 :Why: Many existing functions accept `logger(message, verbose, start)` and changing all signatures at once would be high churn.
 :Change: Keep the callback interface for now, but implement it as a thin bridge that publishes `LogEvent(level="INFO", source="voice", message=...)` to the bus and console adapter. Add explicit helpers for warning/error where current code emits direct error strings.
@@ -88,7 +88,7 @@
 :Done when: The browser can receive live logs without mixing them into transcript output.
 :END:
 
-** TODO [#B] Publish structured events for current voice web errors
+** DONE [#B] Publish structured events for current voice web errors
 :PROPERTIES:
 :Why: Current voice errors are emitted as strings like `[server error] Audio stream failed: ...`. These should appear in both transcript context and the global log/notification system.
 :Change: Update voice upload failures, websocket stream exceptions, invalid chunk configuration, inference errors, and session cleanup failures to publish `ERROR` log events. Keep transcript-facing messages where they are useful, but do not make transcript output the only error surface.
@@ -96,14 +96,14 @@
 :Done when: Voice runtime/server errors show up in the log bus and still remain understandable in the voice workflow.
 :END:
 
-* TODO [#A] Build Searchable GUI Log Section
+* WIP [#A] Build Searchable GUI Log Section
 :PROPERTIES:
 :Effort: 1.5 days
 :Goal: Add a GUI section that displays logs, supports search/filtering, and stays useful without overwhelming the main workflow.
 :Notes: Use Svelte components and local state. Do not add UI dependencies. Keep the interface dense and operational, not a marketing page.
 :END:
 
-** TODO [#A] Add frontend log store and API client
+** DONE [#A] Add frontend log store and API client
 :PROPERTIES:
 :Why: Multiple components need access to recent logs and live updates: the log panel and error notifications at minimum.
 :Change: Add `frontend/src/lib/log-store.js` or `frontend/src/features/logs/` with functions to fetch `/api/app/logs`, open `/api/app/logs/events`, merge events by id, cap history, and expose search/filter helpers.
@@ -111,7 +111,7 @@
 :Done when: Frontend logging state is reusable outside one component.
 :END:
 
-** TODO [#A] Add a searchable log panel to the app shell
+** DONE [#A] Add a searchable log panel to the app shell
 :PROPERTIES:
 :Why: Logs should be visible in a dedicated GUI section, not hidden inside the voice transcript.
 :Change: Add `frontend/src/features/logs/LogPanel.svelte` and mount it in the app shell as a persistent section or tab. Include search input, level filter, source filter, clear-view button, auto-scroll toggle, and copy-log-entry action. Use stable dimensions so the panel does not shift layout unexpectedly.
@@ -127,14 +127,14 @@
 :Done when: Transcript output remains clean and operational logs are searchable in the log section.
 :END:
 
-* TODO [#A] Add ERROR Notifications
+* WIP [#A] Add ERROR Notifications
 :PROPERTIES:
 :Effort: 0.75 day
 :Goal: Surface ERROR events immediately as GUI notifications without requiring the user to watch the log panel.
 :Notes: Use in-app notifications first. Native OS notifications can be a later optional adapter because browser permission prompts add complexity.
 :END:
 
-** TODO [#A] Implement in-app notification component for ERROR logs
+** DONE [#A] Implement in-app notification component for ERROR logs
 :PROPERTIES:
 :Why: The requirement says ERRORs should appear as notification. An in-app toast/banner works in desktop webview, browser dev mode, and server mode without extra permissions.
 :Change: Add `frontend/src/features/logs/ErrorNotifications.svelte` that subscribes to the log store and shows new `ERROR` events. Include source, message, timestamp, dismiss button, and a button/link to open the log panel filtered to that event or to errors.
@@ -142,7 +142,7 @@
 :Done when: New ERROR log events create visible notifications in the GUI.
 :END:
 
-** TODO [#B] Add deduplication and notification throttling
+** DONE [#B] Add deduplication and notification throttling
 :PROPERTIES:
 :Why: A repeated stream or model error could produce many identical events and make the GUI unusable.
 :Change: Deduplicate notifications by message/source within a short time window, show a count for repeated errors, and cap visible notifications. Keep all events in the log history even when notifications are collapsed.
